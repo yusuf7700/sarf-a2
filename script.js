@@ -26,9 +26,12 @@ try {
     `).join('');
   }
   
+  let currentChapterData = null;
+
   function openChapter(n){
     const ch = CHAPTERS.find(c => c.n === n);
     if(!ch || !ch.available) return;
+    currentChapterData = ch.data;
     document.getElementById('homeView').style.display = 'none';
     document.getElementById('chapterView').style.display = 'block';
     document.getElementById('backBtn').classList.add('show');
@@ -65,12 +68,12 @@ try {
     const mazChars = root.mazid.split(' ');
     let diagram = `<div class="root-diagram">
       <div class="stack mujarrad">
-        <div style="display:flex;gap:4px;">${mujChars.map(c=>`<div class="box">${c}</div>`).join('')}</div>
+        <div class="letters-row" style="display:flex;gap:4px;direction:rtl;">${mujChars.map(c=>`<div class="box">${c}</div>`).join('')}</div>
         <div class="label">MUJARRAD</div>
       </div>
       <div class="arrow">←</div>
       <div class="stack mazid">
-        <div style="display:flex;gap:4px;">${mazChars.map(c=>`<div class="box ${!mujChars.includes(c)?'added':''}">${c}</div>`).join('')}</div>
+        <div class="letters-row" style="display:flex;gap:4px;direction:rtl;">${mazChars.map(c=>`<div class="box ${!mujChars.includes(c)?'added':''}">${c}</div>`).join('')}</div>
         <div class="label">${d.bobNomi.uz.toUpperCase()}</div>
       </div>
     </div>`;
@@ -145,30 +148,132 @@ try {
     document.getElementById('panel-jadval').innerHTML = html;
   }
   
-  function renderMashq(d){
-    if(!d.mashqlar || !d.mashqlar.length){
-      document.getElementById('panel-mashq').innerHTML = `<div class="empty-state">Bu bobda alohida mashq berilmagan</div>`;
-      return;
+  // ===== Test tizimi =====
+  let quizState = null; // {questions, current, score, answered}
+
+  function shuffle(arr){
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
     }
-    let html = '';
-    d.mashqlar.forEach(ex => {
-      html += `<div class="card"><h3>${ex.sarlavha}</h3>`;
-      if(Array.isArray(ex.felar)){
-        ex.felar.forEach(f => {
-          const text = typeof f === 'string' ? f : (f.mozi || JSON.stringify(f));
-          const meta = typeof f === 'object' && f.nav ? f.nav : '';
-          html += `<div class="exercise-item">${text}${meta ? `<div class="exercise-meta">${meta}</div>` : ''}</div>`;
-        });
-      } else if(typeof ex.felar === 'object'){
-        Object.entries(ex.felar).forEach(([nav, f]) => {
-          html += `<div class="exercise-item">${f}<div class="exercise-meta">${nav}</div></div>`;
+    return a;
+  }
+
+  function buildQuizPool(d){
+    const pool = [];
+    const fw = (d.feWaznlariJadvali && d.feWaznlariJadvali.qatorlar) || [];
+
+    function addField(field, label){
+      const vals = [...new Set(fw.map(r=>r[field]).filter(v=>v && v!=='-'))];
+      if(vals.length>=4){
+        fw.forEach(r=>{
+          if(!r[field] || r[field]==='-') return;
+          const base = r.mazidMozi || r.mujarrad;
+          if(!base) return;
+          pool.push({q:`«${base}» so'zining ${label} shakli qaysi?`, answer:r[field], others:vals});
         });
       }
-      html += `</div>`;
+    }
+    addField('muzore', "muzore'");
+    addField('masdar', 'masdar');
+    addField('amr', 'amr');
+
+    const examples = [];
+    (d.manolar || []).forEach(m => {
+      [...(m.misollar||[]), ...(m.makonGuruh||[]), ...(m.zamonGuruh||[])].forEach(ex => {
+        if(ex.ar && ex.uz) examples.push(ex);
+      });
     });
+    const uzVals = [...new Set(examples.map(e=>e.uz))];
+    if(uzVals.length>=4){
+      examples.forEach(ex => {
+        pool.push({q:`«${ex.ar}» iborasining ma'nosi nima?`, answer:ex.uz, others:uzVals});
+      });
+    }
+    return pool;
+  }
+
+  function renderMashq(d){
+    const pool = buildQuizPool(d);
+    if(pool.length < 3){
+      document.getElementById('panel-mashq').innerHTML = `
+        <div class="empty-state" style="padding-top:60px;">
+          <div style="font-size:36px;margin-bottom:10px;">🧩</div>
+          <div style="font-weight:700;color:var(--forest-deep);margin-bottom:6px;">Bu bob uchun test hali yetarli emas</div>
+        </div>`;
+      return;
+    }
+    const picked = shuffle(pool).slice(0, Math.min(10, pool.length));
+    const questions = picked.map(item => {
+      const wrongPool = item.others.filter(v => v !== item.answer);
+      const wrongs = shuffle(wrongPool).slice(0, 3);
+      const options = shuffle([item.answer, ...wrongs]);
+      return { q:item.q, options, answer:item.answer };
+    });
+    quizState = { questions, current:0, score:0, answered:false };
+    renderQuizQuestion();
+  }
+
+  function renderQuizQuestion(){
+    const s = quizState;
+    if(!s) return;
+    if(s.current >= s.questions.length){
+      document.getElementById('panel-mashq').innerHTML = `
+        <div class="card" style="text-align:center;padding:30px 16px;">
+          <div style="font-size:36px;margin-bottom:8px;">🎉</div>
+          <h3 style="margin-bottom:6px;">Test yakunlandi!</h3>
+          <p style="font-size:14px;color:var(--muted);margin:0 0 16px;">Natija: <b style="color:var(--forest-deep);">${s.score} / ${s.questions.length}</b></p>
+          <div class="tab" style="display:inline-block;background:var(--forest);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;border:none;font-size:13px;" onclick="restartQuiz()">Qayta boshlash</div>
+        </div>`;
+      return;
+    }
+    const q = s.questions[s.current];
+    const html = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:10px;">
+          <span>Savol ${s.current+1} / ${s.questions.length}</span>
+          <span>Ball: ${s.score}</span>
+        </div>
+        <h3 style="direction:rtl;text-align:right;font-family:'Amiri',serif;font-size:19px;line-height:1.6;">${q.q}</h3>
+        <div id="quizOptions" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+          ${q.options.map((opt,i) => `
+            <div class="quiz-opt" data-i="${i}" onclick="answerQuiz(${i})"
+              style="border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;font-size:13.5px;direction:rtl;text-align:right;">
+              ${opt}
+            </div>`).join('')}
+        </div>
+      </div>`;
     document.getElementById('panel-mashq').innerHTML = html;
   }
-  
+
+  window.answerQuiz = function(i){
+    const s = quizState;
+    if(!s || s.answered) return;
+    s.answered = true;
+    const q = s.questions[s.current];
+    const opts = document.querySelectorAll('.quiz-opt');
+    opts.forEach(el => {
+      const idx = Number(el.dataset.i);
+      if(q.options[idx] === q.answer){
+        el.style.background = '#e6f4ea'; el.style.borderColor = '#2f8a4e'; el.style.color = '#1f5c33';
+      } else if(idx === i){
+        el.style.background = '#fdeaea'; el.style.borderColor = '#c65959'; el.style.color = '#8a2f2f';
+      }
+      el.onclick = null;
+    });
+    if(q.options[i] === q.answer) s.score++;
+    setTimeout(() => {
+      s.current++;
+      s.answered = false;
+      renderQuizQuestion();
+    }, 900);
+  };
+
+  window.restartQuiz = function(){
+    if(currentChapterData) renderMashq(currentChapterData);
+  };
+
   try {
     renderChapters();
   } catch(err) {
@@ -187,3 +292,4 @@ try {
     alert('Xato: ' + err.message);
   }
       }
+        
