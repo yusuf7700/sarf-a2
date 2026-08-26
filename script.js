@@ -26,15 +26,22 @@ try {
     `).join('');
   }
   
+  const VIEWS = ['homeView','chapterView','lugatView'];
+  function showView(id){
+    VIEWS.forEach(v => document.getElementById(v).style.display = (v === id ? 'block' : 'none'));
+  }
+  document.getElementById('backBtn').addEventListener('click', () => backAction());
+  let backAction = goHome;
+
   let currentChapterData = null;
 
   function openChapter(n){
     const ch = CHAPTERS.find(c => c.n === n);
     if(!ch || !ch.available) return;
     currentChapterData = ch.data;
-    document.getElementById('homeView').style.display = 'none';
-    document.getElementById('chapterView').style.display = 'block';
+    showView('chapterView');
     document.getElementById('backBtn').classList.add('show');
+    backAction = goHome;
     document.getElementById('topTitle').textContent = `${ch.n}-bob: ${ch.uz}`;
     document.getElementById('topSub').textContent = ch.arab;
     renderQoida(ch.data);
@@ -45,11 +52,65 @@ try {
   }
   
   function goHome(){
-    document.getElementById('homeView').style.display = 'block';
-    document.getElementById('chapterView').style.display = 'none';
+    showView('homeView');
     document.getElementById('backBtn').classList.remove('show');
     document.getElementById('topTitle').textContent = 'Sarf A2';
     document.getElementById('topSub').textContent = 'Сулосий мазид — 12 боб';
+    document.getElementById('navBoblar').classList.add('active');
+    document.getElementById('navLugat').classList.remove('active');
+    window.scrollTo(0,0);
+  }
+
+  // ===== Lug'at =====
+  function extractVocab(d){
+    const map = new Map(); // ar -> uz (dedupe)
+    (d.manolar || []).forEach(m => {
+      [...(m.misollar||[]), ...(m.makonGuruh||[]), ...(m.zamonGuruh||[])].forEach(ex => {
+        if(ex.ar && ex.uz && !map.has(ex.ar)) map.set(ex.ar, ex.uz);
+      });
+    });
+    ((d.feWaznlariJadvali && d.feWaznlariJadvali.qatorlar) || []).forEach(r => {
+      const w = r.mazidMozi || r.mujarrad;
+      if(w && r.manoUz && !map.has(w)) map.set(w, r.manoUz);
+    });
+    return Array.from(map.entries()).map(([ar,uz]) => ({ar,uz}));
+  }
+
+  function goLugat(){
+    showView('lugatView');
+    document.getElementById('backBtn').classList.add('show');
+    document.getElementById('topTitle').textContent = "Lug'at";
+    document.getElementById('topSub').textContent = 'Boblar bo\'yicha so\'zlar';
+    document.getElementById('navBoblar').classList.remove('active');
+    document.getElementById('navLugat').classList.add('active');
+    backAction = goHome;
+    renderLugatBobList();
+    window.scrollTo(0,0);
+  }
+
+  function renderLugatBobList(){
+    const html = CHAPTERS.filter(c => c.available).map(ch => {
+      const count = extractVocab(ch.data).length;
+      return `<div class="chapter-card available" style="width:100%;margin-bottom:10px;" onclick="openLugatBob(${ch.n})">
+        <div class="num">Bob ${ch.n} · ${count} ta so'z</div>
+        <div class="arab">${ch.arab}</div>
+        <div class="uzname">${ch.uz}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('lugatContent').innerHTML = `<div style="display:flex;flex-direction:column;">${html}</div>`;
+  }
+
+  function openLugatBob(n){
+    const ch = CHAPTERS.find(c => c.n === n);
+    if(!ch) return;
+    const words = extractVocab(ch.data);
+    document.getElementById('topTitle').textContent = `Lug'at — ${ch.n}-bob`;
+    document.getElementById('topSub').textContent = ch.arab;
+    backAction = goLugat;
+    const html = `<div class="card">` + words.map(w =>
+      `<div class="example"><span class="ar">${w.ar}</span><span class="uz">${w.uz}</span></div>`
+    ).join('') + `</div>`;
+    document.getElementById('lugatContent').innerHTML = html;
     window.scrollTo(0,0);
   }
   
@@ -160,42 +221,77 @@ try {
     return a;
   }
 
+  const FIELD_LABELS = {
+    muzore: "muzore' (hozirgi-kelasi zamon)",
+    amr: "amr (buyruq)",
+    masdar: "masdar",
+    foil: "ismi foil"
+  };
+  const ALL_FIELDS = ['muzore','amr','masdar','foil'];
+
   function buildQuizPool(d){
     const pool = [];
     const fw = (d.feWaznlariJadvali && d.feWaznlariJadvali.qatorlar) || [];
 
-    function addField(field, label){
-      const vals = [...new Set(fw.map(r=>r[field]).filter(v=>v && v!=='-'))];
-      if(vals.length>=4){
-        fw.forEach(r=>{
-          if(!r[field] || r[field]==='-') return;
-          const base = r.mazidMozi || r.mujarrad;
-          if(!base) return;
-          pool.push({q:`«${base}» so'zining ${label} shakli qaysi?`, answer:r[field], others:vals});
+    // 1) Fe'l shakllarini farqlash savollari
+    fw.forEach(row => {
+      const citation = row.mazidMozi || row.mujarrad;
+      if(!citation) return;
+      ALL_FIELDS.forEach(target => {
+        const answer = row[target];
+        if(!answer || answer === '-') return;
+        const distractorFields = ALL_FIELDS.filter(f => f !== target);
+        const distractors = distractorFields.map(f => row[f]).filter(v => v && v !== '-');
+        if(distractors.length < 3) return;
+        pool.push({
+          q: `«${citation}» fe'lining ${FIELD_LABELS[target]} shakli qaysi?`,
+          answer,
+          options: [answer, ...distractors]
+        });
+      });
+    });
+
+    // 2) Qoida: vazn qanday harf(lar) bilan hosil bo'ladi
+    if(d.mazidHarfi && d.mazidHarfi.harf){
+      const otherHarflar = [...new Set(
+        CHAPTERS.filter(c => c.available && c.data.mazidHarfi && c.data !== d)
+          .map(c => c.data.mazidHarfi.harf)
+      )];
+      if(otherHarflar.length >= 3){
+        const wrongs = shuffle(otherHarflar).slice(0,3);
+        pool.push({
+          q: `«${d.bobNomi.arab}» vazni qanday harf(lar) orttirilib hosil bo'ladi?`,
+          answer: d.mazidHarfi.harf,
+          options: [d.mazidHarfi.harf, ...wrongs]
         });
       }
     }
-    addField('muzore', "muzore'");
-    addField('masdar', 'masdar');
-    addField('amr', 'amr');
 
-    const examples = [];
-    (d.manolar || []).forEach(m => {
-      [...(m.misollar||[]), ...(m.makonGuruh||[]), ...(m.zamonGuruh||[])].forEach(ex => {
-        if(ex.ar && ex.uz) examples.push(ex);
-      });
-    });
-    const uzVals = [...new Set(examples.map(e=>e.uz))];
-    if(uzVals.length>=4){
-      examples.forEach(ex => {
-        pool.push({q:`«${ex.ar}» iborasining ma'nosi nima?`, answer:ex.uz, others:uzVals});
+    // 3) Qoida: ibora qaysi ma'no toifasiga oid
+    const categories = (d.manolar || []).filter(m => m.sarlavha);
+    if(categories.length >= 4){
+      const sarlavhalar = categories.map(m => m.sarlavha);
+      categories.forEach(m => {
+        const ex = (m.misollar || m.makonGuruh || [])[0];
+        if(!ex || !ex.ar) return;
+        const wrongs = shuffle(sarlavhalar.filter(s => s !== m.sarlavha)).slice(0,3);
+        if(wrongs.length < 3) return;
+        pool.push({
+          q: `«${ex.ar}» iborasi qaysi ma'no toifasiga misol bo'ladi?`,
+          answer: m.sarlavha,
+          options: [m.sarlavha, ...wrongs]
+        });
       });
     }
+
     return pool;
   }
 
+  let quizPoolCache = [];
+
   function renderMashq(d){
     const pool = buildQuizPool(d);
+    quizPoolCache = pool;
     if(pool.length < 3){
       document.getElementById('panel-mashq').innerHTML = `
         <div class="empty-state" style="padding-top:60px;">
@@ -204,16 +300,31 @@ try {
         </div>`;
       return;
     }
-    const picked = shuffle(pool).slice(0, Math.min(10, pool.length));
-    const questions = picked.map(item => {
-      const wrongPool = item.others.filter(v => v !== item.answer);
-      const wrongs = shuffle(wrongPool).slice(0, 3);
-      const options = shuffle([item.answer, ...wrongs]);
-      return { q:item.q, options, answer:item.answer };
-    });
+    const presets = [...new Set([5,10,15,20,pool.length].filter(n => n>0 && n<=pool.length))].sort((a,b)=>a-b);
+    document.getElementById('panel-mashq').innerHTML = `
+      <div class="card" style="text-align:center;padding:26px 16px;">
+        <div style="font-size:34px;margin-bottom:8px;">📝</div>
+        <h3 style="margin-bottom:6px;">Test tayyor</h3>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Jami <b style="color:var(--forest-deep);">${pool.length}</b> ta savol mavjud. Nechtasini yechmoqchisiz?</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+          ${presets.map(n => `
+            <div onclick="startQuiz(${n})" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:700;color:var(--forest-deep);">
+              ${n === pool.length ? `Barchasi (${n})` : n}
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  window.startQuiz = function(n){
+    const picked = shuffle(quizPoolCache).slice(0, n);
+    const questions = picked.map(item => ({
+      q: item.q,
+      options: shuffle(item.options),
+      answer: item.answer
+    }));
     quizState = { questions, current:0, score:0, answered:false };
     renderQuizQuestion();
-  }
+  };
 
   function renderQuizQuestion(){
     const s = quizState;
@@ -291,5 +402,5 @@ try {
   } else {
     alert('Xato: ' + err.message);
   }
-      }
-        
+                    }
+      
