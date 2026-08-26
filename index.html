@@ -11,7 +11,7 @@
 <body>
 <div id="app">
   <header class="topbar">
-    <span class="back" id="backBtn" onclick="goHome()">←</span>
+    <span class="back" id="backBtn">←</span>
     <div>
       <h1 id="topTitle">Sarf A2</h1>
       <div class="sub" id="topSub">Сулосий мазид — 12 боб</div>
@@ -42,11 +42,15 @@
     <div class="panel" id="panel-jadval"></div>
     <div class="panel" id="panel-mashq"></div>
   </div>
+
+  <div id="lugatView" style="display:none;">
+    <div id="lugatContent" style="padding:16px 14px 30px;"></div>
+  </div>
 </div>
 
 <nav class="bottomnav">
-  <div class="item active" onclick="goHome()"><span class="ic">📖</span>Boblar</div>
-  <div class="item" onclick="alert('Lug\'at bo\'limi keyingi bosqichda qo\'shiladi')"><span class="ic">📚</span>Lug'at</div>
+  <div class="item active" id="navBoblar" onclick="goHome()"><span class="ic">📖</span>Boblar</div>
+  <div class="item" id="navLugat" onclick="goLugat()"><span class="ic">📚</span>Lug'at</div>
   <div class="item" onclick="alert('Natijalar bo\'limi Firebase qo\'shilgach ishlaydi')"><span class="ic">📊</span>Natijalar</div>
 </nav>
 
@@ -64,5 +68,4 @@
 <script src="data/bob12.js"></script>
 <script src="script.js"></script>
 </body>
-  </html>
-  
+</html>
