@@ -1,4 +1,63 @@
 try {
+// ===== Sozlamalar (til, shrift, mavzu) =====
+  const SETTINGS_KEY = 'sarfA2Settings';
+  function loadSettings(){
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if(raw) return Object.assign({lang:'lotin', arScale:1, uzScale:1, theme:'system'}, JSON.parse(raw));
+    } catch(e){}
+    return {lang:'lotin', arScale:1, uzScale:1, theme:'system'};
+  }
+  function saveSettings(){
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); } catch(e){}
+  }
+  const SETTINGS = loadSettings();
+
+  // --- Lotin -> Kirill transliteratsiya (taxminiy, ASCII harflarga tegadi, arab matnga tegmaydi) ---
+  function toCyr(str){
+    if(!str) return str;
+    const isAllUpper = str === str.toUpperCase() && str !== str.toLowerCase();
+    let s = str;
+    const multi = [
+      [/o['ʻʼ‘’`]/gi, 'ў'], [/g['ʻʼ‘’`]/gi, 'ғ'],
+      [/sh/gi, 'ш'], [/ch/gi, 'ч'],
+      [/yo/gi, 'ё'], [/yu/gi, 'ю'], [/ya/gi, 'я'], [/ng/gi, 'нг'],
+    ];
+    multi.forEach(([re, out]) => { s = s.replace(re, out); });
+    const map = {a:'а',b:'б',d:'д',e:'е',f:'ф',g:'г',h:'ҳ',i:'и',j:'ж',k:'к',l:'л',m:'м',n:'н',o:'о',p:'п',q:'қ',r:'р',s:'с',t:'т',u:'у',v:'в',x:'х',y:'й',z:'з',c:'ц',"'":'ъ'};
+    s = s.replace(/[a-z']/gi, ch => map[ch.toLowerCase()] || ch);
+    if(isAllUpper) s = s.toUpperCase();
+    else if(str[0] && str[0] === str[0].toUpperCase() && str[0] !== str[0].toLowerCase()){
+      s = s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    return s;
+  }
+  function L(str){
+    if(str === undefined || str === null) return '';
+    return SETTINGS.lang === 'kirill' ? toCyr(String(str)) : String(str);
+  }
+
+  function applyTheme(){
+    let effective = SETTINGS.theme;
+    if(effective === 'system'){
+      effective = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', effective);
+  }
+  function applyFontScale(){
+    document.documentElement.style.setProperty('--ar-scale', SETTINGS.arScale);
+    document.documentElement.style.setProperty('--uz-scale', SETTINGS.uzScale);
+  }
+  applyTheme();
+  applyFontScale();
+  if(window.matchMedia){
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if(SETTINGS.theme === 'system') applyTheme();
+    });
+  }
+
+  let rerenderCurrent = () => {};
+
 // ===== Boblar ro'yxati (1-bob tayyor, qolganlari tez orada) =====
   const CHAPTERS = [
     {n:1, arab:"أَفْعَلَ", uz:"Af'ala vazni", data:BOB1, available:true},
@@ -21,12 +80,12 @@ try {
       <div class="chapter-card ${ch.available ? 'available' : 'locked'}" ${ch.available ? `onclick="openChapter(${ch.n})"` : ''}>
         <div class="num">Bob ${ch.n}</div>
         <div class="arab">${ch.arab}</div>
-        <div class="uzname">${ch.uz}</div>
+        <div class="uzname">${L(ch.uz)}</div>
       </div>
     `).join('');
   }
   
-  const VIEWS = ['homeView','chapterView','lugatView'];
+  const VIEWS = ['homeView','chapterView','lugatView','sozlamalarView'];
   function showView(id){
     VIEWS.forEach(v => document.getElementById(v).style.display = (v === id ? 'block' : 'none'));
   }
@@ -42,22 +101,29 @@ try {
     showView('chapterView');
     document.getElementById('backBtn').classList.add('show');
     backAction = goHome;
-    document.getElementById('topTitle').textContent = `${ch.n}-bob: ${ch.uz}`;
+    rerenderCurrent = () => openChapter(n);
+    document.getElementById('topTitle').textContent = `${ch.n}-${L('bob')}: ${L(ch.uz)}`;
     document.getElementById('topSub').textContent = ch.arab;
     renderQoida(ch.data);
     renderJadval(ch.data);
     renderMashq(ch.data);
     switchTab('qoida');
+    setActiveNav('navBoblar');
     window.scrollTo(0,0);
   }
   
+  function setActiveNav(id){
+    ['navBoblar','navLugat','navSozlamalar'].forEach(i => document.getElementById(i).classList.toggle('active', i === id));
+  }
+
   function goHome(){
     showView('homeView');
     document.getElementById('backBtn').classList.remove('show');
     document.getElementById('topTitle').textContent = 'Sarf A2';
-    document.getElementById('topSub').textContent = 'Сулосий мазид — 12 боб';
-    document.getElementById('navBoblar').classList.add('active');
-    document.getElementById('navLugat').classList.remove('active');
+    document.getElementById('topSub').textContent = L('Sulosiy mazid — 12 bob');
+    rerenderCurrent = renderChapters;
+    setActiveNav('navBoblar');
+    renderChapters();
     window.scrollTo(0,0);
   }
 
@@ -79,11 +145,11 @@ try {
   function goLugat(){
     showView('lugatView');
     document.getElementById('backBtn').classList.add('show');
-    document.getElementById('topTitle').textContent = "Lug'at";
-    document.getElementById('topSub').textContent = 'Boblar bo\'yicha so\'zlar';
-    document.getElementById('navBoblar').classList.remove('active');
-    document.getElementById('navLugat').classList.add('active');
+    document.getElementById('topTitle').textContent = L("Lug'at");
+    document.getElementById('topSub').textContent = L("Boblar bo'yicha so'zlar");
     backAction = goHome;
+    rerenderCurrent = goLugat;
+    setActiveNav('navLugat');
     renderLugatBobList();
     window.scrollTo(0,0);
   }
@@ -92,9 +158,9 @@ try {
     const html = CHAPTERS.filter(c => c.available).map(ch => {
       const count = extractVocab(ch.data).length;
       return `<div class="chapter-card available" style="width:100%;margin-bottom:10px;" onclick="openLugatBob(${ch.n})">
-        <div class="num">Bob ${ch.n} · ${count} ta so'z</div>
+        <div class="num">Bob ${ch.n} · ${count} ${L("ta so'z")}</div>
         <div class="arab">${ch.arab}</div>
-        <div class="uzname">${ch.uz}</div>
+        <div class="uzname">${L(ch.uz)}</div>
       </div>`;
     }).join('');
     document.getElementById('lugatContent').innerHTML = `<div style="display:flex;flex-direction:column;">${html}</div>`;
@@ -104,11 +170,12 @@ try {
     const ch = CHAPTERS.find(c => c.n === n);
     if(!ch) return;
     const words = extractVocab(ch.data);
-    document.getElementById('topTitle').textContent = `Lug'at — ${ch.n}-bob`;
+    document.getElementById('topTitle').textContent = `${L("Lug'at")} — ${ch.n}-${L('bob')}`;
     document.getElementById('topSub').textContent = ch.arab;
     backAction = goLugat;
+    rerenderCurrent = () => openLugatBob(n);
     const html = `<div class="card">` + words.map(w =>
-      `<div class="example"><span class="ar">${w.ar}</span><span class="uz">${w.uz}</span></div>`
+      `<div class="example"><span class="ar">${w.ar}</span><span class="uz">${L(w.uz)}</span></div>`
     ).join('') + `</div>`;
     document.getElementById('lugatContent').innerHTML = html;
     window.scrollTo(0,0);
@@ -130,47 +197,47 @@ try {
     let diagram = `<div class="root-diagram">
       <div class="stack mujarrad">
         <div class="letters-row" style="display:flex;gap:4px;direction:rtl;">${mujChars.map(c=>`<div class="box">${c}</div>`).join('')}</div>
-        <div class="label">MUJARRAD</div>
+        <div class="label">${L('MUJARRAD')}</div>
       </div>
       <div class="arrow">←</div>
       <div class="stack mazid">
         <div class="letters-row" style="display:flex;gap:4px;direction:rtl;">${mazChars.map(c=>`<div class="box ${!mujChars.includes(c)?'added':''}">${c}</div>`).join('')}</div>
-        <div class="label">${d.bobNomi.uz.toUpperCase()}</div>
+        <div class="label">${L(d.bobNomi.uz.toUpperCase())}</div>
       </div>
     </div>`;
   
     let html = diagram;
-    html += `<div class="card"><h3>Vazn hosil bo'lishi</h3>
-      <p style="font-size:13px;line-height:1.6;margin:0;">${d.mazidHarfi.izoh}</p>
-      <div class="example" style="margin-top:8px;"><span class="ar">${d.mazidHarfi.misol.namuna}</span><span class="uz">Namuna fe'l</span></div>
+    html += `<div class="card"><h3>${L("Vazn hosil bo'lishi")}</h3>
+      <p style="font-size:13px;line-height:1.6;margin:0;">${L(d.mazidHarfi.izoh)}</p>
+      <div class="example" style="margin-top:8px;"><span class="ar">${d.mazidHarfi.misol.namuna}</span><span class="uz">${L("Namuna fe'l")}</span></div>
     </div>`;
   
     d.manolar.forEach(m => {
-      html += `<div class="card"><h3><span class="num-badge">${m.id}</span>${m.sarlavha}</h3>`;
-      if(m.izoh) html += `<div class="note">${m.izoh}</div>`;
+      html += `<div class="card"><h3><span class="num-badge">${m.id}</span>${L(m.sarlavha)}</h3>`;
+      if(m.izoh) html += `<div class="note">${L(m.izoh)}</div>`;
       const list = m.misollar || m.makonGuruh || [];
       list.forEach(ex => {
         if(ex.lozim){
-          html += `<div class="example"><span class="ar">${ex.lozim.ar} ← ${ex.mutaaddiy.ar}</span><span class="uz">${ex.lozim.uz} → ${ex.mutaaddiy.uz}</span></div>`;
+          html += `<div class="example"><span class="ar">${ex.lozim.ar} ← ${ex.mutaaddiy.ar}</span><span class="uz">${L(ex.lozim.uz)} → ${L(ex.mutaaddiy.uz)}</span></div>`;
         } else if(ex.ar){
-          html += `<div class="example"><span class="ar">${ex.ar}</span><span class="uz">${ex.uz || ''}</span></div>`;
+          html += `<div class="example"><span class="ar">${ex.ar}</span><span class="uz">${L(ex.uz || '')}</span></div>`;
         } else if(ex.mazid){
-          html += `<div class="example"><span class="ar">${ex.mazid}${ex.mujarrad ? ' ← '+ex.mujarrad : ''}</span><span class="uz">${ex.uz || ''}</span></div>`;
+          html += `<div class="example"><span class="ar">${ex.mazid}${ex.mujarrad ? ' ← '+ex.mujarrad : ''}</span><span class="uz">${L(ex.uz || '')}</span></div>`;
         }
       });
       if(m.zamonGuruh){
-        html += `<div class="note" style="margin-top:10px;margin-bottom:4px;">Zamon guruhi:</div>`;
+        html += `<div class="note" style="margin-top:10px;margin-bottom:4px;">${L('Zamon guruhi:')}</div>`;
         m.zamonGuruh.forEach(ex => {
-          html += `<div class="example"><span class="ar">${ex.ar}</span><span class="uz">${ex.uz}</span></div>`;
+          html += `<div class="example"><span class="ar">${ex.ar}</span><span class="uz">${L(ex.uz)}</span></div>`;
         });
       }
       html += `</div>`;
     });
   
     if(d.aslHolatiJadvali){
-      html += `<div class="card"><h3>Asl holat o'zgarishi</h3>
-        <p style="font-size:13px;line-height:1.6;">${d.aslHolatiJadvali.izoh}</p>
-        <div class="note">${d.aslHolatiJadvali.qoida}</div>
+      html += `<div class="card"><h3>${L("Asl holat o'zgarishi")}</h3>
+        <p style="font-size:13px;line-height:1.6;">${L(d.aslHolatiJadvali.izoh)}</p>
+        <div class="note">${L(d.aslHolatiJadvali.qoida)}</div>
       </div>`;
     }
   
@@ -178,28 +245,28 @@ try {
   }
   
   function renderJadval(d){
-    let html = `<div class="card"><h3>${d.feWaznlariJadvali.sarlavha}</h3>
+    let html = `<div class="card"><h3>${L(d.feWaznlariJadvali.sarlavha)}</h3>
       <div class="table-scroll"><table class="conj"><thead><tr>
-        <th>Nav</th><th>Mujarrad</th><th>Mazid</th><th>Muzore'</th><th>Amr</th><th>Masdar</th><th>Ma'no</th>
+        <th>${L('Nav')}</th><th>${L('Mujarrad')}</th><th>${L('Mazid')}</th><th>Muzore'</th><th>${L('Amr')}</th><th>${L('Masdar')}</th><th>${L("Ma'no")}</th>
       </tr></thead><tbody>`;
     d.feWaznlariJadvali.qatorlar.forEach(r => {
-      html += `<tr><td>${r.nav}</td><td class="ar">${r.mujarrad}</td><td class="ar">${r.mazidMozi}</td><td class="ar">${r.muzore}</td><td class="ar">${r.amr}</td><td class="ar">${r.masdar}</td><td style="font-size:10.5px;">${r.manoUz}</td></tr>`;
+      html += `<tr><td>${L(r.nav)}</td><td class="ar">${r.mujarrad}</td><td class="ar">${r.mazidMozi}</td><td class="ar">${r.muzore}</td><td class="ar">${r.amr}</td><td class="ar">${r.masdar}</td><td style="font-size:10.5px;">${L(r.manoUz)}</td></tr>`;
     });
     html += `</tbody></table></div></div>`;
   
-    html += `<div class="card"><h3>${d.nafiyNahiyJadvali.sarlavha}</h3>
+    html += `<div class="card"><h3>${L(d.nafiyNahiyJadvali.sarlavha)}</h3>
       <div class="table-scroll"><table class="conj"><thead><tr>
-        <th>Nav</th><th>Nafiy</th><th>Nahiy</th><th>Jahd</th><th>Amr g'oib</th>
+        <th>${L('Nav')}</th><th>${L('Nafiy')}</th><th>${L('Nahiy')}</th><th>${L('Jahd')}</th><th>${L("Amr g'oib")}</th>
       </tr></thead><tbody>`;
     d.nafiyNahiyJadvali.qatorlar.forEach(r => {
-      html += `<tr><td>${r.nav}</td><td class="ar">${r.nafiy}</td><td class="ar">${r.nahiy}</td><td class="ar">${r.jahd}</td><td class="ar">${r.amrGoib}</td></tr>`;
+      html += `<tr><td>${L(r.nav)}</td><td class="ar">${r.nafiy}</td><td class="ar">${r.nahiy}</td><td class="ar">${r.jahd}</td><td class="ar">${r.amrGoib}</td></tr>`;
     });
     html += `</tbody></table></div>`;
-    if(d.nafiyNahiyJadvali.izoh) html += `<div class="note">${d.nafiyNahiyJadvali.izoh}</div>`;
+    if(d.nafiyNahiyJadvali.izoh) html += `<div class="note">${L(d.nafiyNahiyJadvali.izoh)}</div>`;
     html += `</div>`;
   
     if(d.tuslashNamunalari){
-      html += `<div class="card"><h3>14 sig'ada tuslash namunalari</h3>`;
+      html += `<div class="card"><h3>${L("14 sig'ada tuslash namunalari")}</h3>`;
       d.tuslashNamunalari.misolFelar.forEach(f => {
         html += `<div class="example"><span class="ar">${f}</span></div>`;
       });
@@ -244,7 +311,7 @@ try {
         const distractors = distractorFields.map(f => row[f]).filter(v => v && v !== '-');
         if(distractors.length < 3) return;
         pool.push({
-          q: `«${citation}» fe'lining ${FIELD_LABELS[target]} shakli qaysi?`,
+          q: L(`«${citation}» fe'lining ${FIELD_LABELS[target]} shakli qaysi?`),
           answer,
           options: [answer, ...distractors]
         });
@@ -260,9 +327,9 @@ try {
       if(otherHarflar.length >= 3){
         const wrongs = shuffle(otherHarflar).slice(0,3);
         pool.push({
-          q: `«${d.bobNomi.arab}» vazni qanday harf(lar) orttirilib hosil bo'ladi?`,
-          answer: d.mazidHarfi.harf,
-          options: [d.mazidHarfi.harf, ...wrongs]
+          q: L(`«${d.bobNomi.arab}» vazni qanday harf(lar) orttirilib hosil bo'ladi?`),
+          answer: L(d.mazidHarfi.harf),
+          options: [d.mazidHarfi.harf, ...wrongs].map(L)
         });
       }
     }
@@ -277,9 +344,9 @@ try {
         const wrongs = shuffle(sarlavhalar.filter(s => s !== m.sarlavha)).slice(0,3);
         if(wrongs.length < 3) return;
         pool.push({
-          q: `«${ex.ar}» iborasi qaysi ma'no toifasiga misol bo'ladi?`,
-          answer: m.sarlavha,
-          options: [m.sarlavha, ...wrongs]
+          q: L(`«${ex.ar}» iborasi qaysi ma'no toifasiga misol bo'ladi?`),
+          answer: L(m.sarlavha),
+          options: [m.sarlavha, ...wrongs].map(L)
         });
       });
     }
@@ -296,7 +363,7 @@ try {
       document.getElementById('panel-mashq').innerHTML = `
         <div class="empty-state" style="padding-top:60px;">
           <div style="font-size:36px;margin-bottom:10px;">🧩</div>
-          <div style="font-weight:700;color:var(--forest-deep);margin-bottom:6px;">Bu bob uchun test hali yetarli emas</div>
+          <div style="font-weight:700;color:var(--forest-deep);margin-bottom:6px;">${L('Bu bob uchun test hali yetarli emas')}</div>
         </div>`;
       return;
     }
@@ -304,12 +371,12 @@ try {
     document.getElementById('panel-mashq').innerHTML = `
       <div class="card" style="text-align:center;padding:26px 16px;">
         <div style="font-size:34px;margin-bottom:8px;">📝</div>
-        <h3 style="margin-bottom:6px;">Test tayyor</h3>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">Jami <b style="color:var(--forest-deep);">${pool.length}</b> ta savol mavjud. Nechtasini yechmoqchisiz?</p>
+        <h3 style="margin-bottom:6px;">${L('Test tayyor')}</h3>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">${L('Jami')} <b style="color:var(--forest-deep);">${pool.length}</b> ${L('ta savol mavjud. Nechtasini yechmoqchisiz?')}</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
           ${presets.map(n => `
             <div onclick="startQuiz(${n})" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:700;color:var(--forest-deep);">
-              ${n === pool.length ? `Barchasi (${n})` : n}
+              ${n === pool.length ? `${L('Barchasi')} (${n})` : n}
             </div>`).join('')}
         </div>
       </div>`;
@@ -333,9 +400,9 @@ try {
       document.getElementById('panel-mashq').innerHTML = `
         <div class="card" style="text-align:center;padding:30px 16px;">
           <div style="font-size:36px;margin-bottom:8px;">🎉</div>
-          <h3 style="margin-bottom:6px;">Test yakunlandi!</h3>
-          <p style="font-size:14px;color:var(--muted);margin:0 0 16px;">Natija: <b style="color:var(--forest-deep);">${s.score} / ${s.questions.length}</b></p>
-          <div class="tab" style="display:inline-block;background:var(--forest);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;border:none;font-size:13px;" onclick="restartQuiz()">Qayta boshlash</div>
+          <h3 style="margin-bottom:6px;">${L('Test yakunlandi!')}</h3>
+          <p style="font-size:14px;color:var(--muted);margin:0 0 16px;">${L('Natija')}: <b style="color:var(--forest-deep);">${s.score} / ${s.questions.length}</b></p>
+          <div class="tab" style="display:inline-block;background:var(--forest);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;border:none;font-size:13px;" onclick="restartQuiz()">${L('Qayta boshlash')}</div>
         </div>`;
       return;
     }
@@ -343,8 +410,8 @@ try {
     const html = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:10px;">
-          <span>Savol ${s.current+1} / ${s.questions.length}</span>
-          <span>Ball: ${s.score}</span>
+          <span>${L('Savol')} ${s.current+1} / ${s.questions.length}</span>
+          <span>${L('Ball')}: ${s.score}</span>
         </div>
         <h3 style="direction:rtl;text-align:right;font-family:'Amiri',serif;font-size:19px;line-height:1.6;">${q.q}</h3>
         <div id="quizOptions" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
@@ -385,22 +452,20 @@ try {
     if(currentChapterData) renderMashq(currentChapterData);
   };
 
-  try {
-    renderChapters();
-  } catch(err) {
-    document.getElementById('chaptersGrid').innerHTML =
-      `<div style="grid-column:1/-1;background:#fff3f3;border:1px solid #e0a0a0;border-radius:10px;padding:14px;color:#7a1f1f;font-size:12.5px;white-space:pre-wrap;">
-        <b>Xato yuz berdi:</b>\n${err.message}\n\nStack: ${err.stack || ''}
-      </div>`;
+  // ===== Sozlamalar =====
+  function goSozlamalar(){
+    showView('sozlamalarView');
+    document.getElementById('backBtn').classList.add('show');
+    document.getElementById('topTitle').textContent = L('Sozlamalar');
+    document.getElementById('topSub').textContent = '';
+    backAction = goHome;
+    rerenderCurrent = goSozlamalar;
+    setActiveNav('navSozlamalar');
+    renderSozlamalar();
+    window.scrollTo(0,0);
   }
-  
-} catch(err) {
-  document.addEventListener('DOMContentLoaded', () => {});
-  const grid = document.getElementById('chaptersGrid');
-  if (grid) {
-    grid.innerHTML = `<div style="grid-column:1/-1;background:#fff3f3;border:1px solid #e0a0a0;border-radius:10px;padding:14px;color:#7a1f1f;font-size:12.5px;white-space:pre-wrap;"><b>Xato yuz berdi:</b>\n${err.message}\n\nStack: ${err.stack || ''}</div>`;
-  } else {
-    alert('Xato: ' + err.message);
-  }
-                    }
-      
+
+  function pillRow(options, currentVal, onclickName){
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px;">${options.map(o => `
+      <div onclick="${onclickName}('${o.val}')"
+        style="border:1.5px solid ${o.val===currentVal?'var(--forest)':
