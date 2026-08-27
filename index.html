@@ -46,12 +46,17 @@
   <div id="lugatView" style="display:none;">
     <div id="lugatContent" style="padding:16px 14px 30px;"></div>
   </div>
+
+  <div id="sozlamalarView" style="display:none;">
+    <div id="sozlamalarContent" style="padding:16px 14px 30px;"></div>
+  </div>
 </div>
 
 <nav class="bottomnav">
   <div class="item active" id="navBoblar" onclick="goHome()"><span class="ic">📖</span>Boblar</div>
   <div class="item" id="navLugat" onclick="goLugat()"><span class="ic">📚</span>Lug'at</div>
-  <div class="item" onclick="alert('Natijalar bo\'limi Firebase qo\'shilgach ishlaydi')"><span class="ic">📊</span>Natijalar</div>
+  <div class="item" id="navNatijalar" onclick="alert('Natijalar bo\'limi Firebase qo\'shilgach ishlaydi')"><span class="ic">📊</span>Natijalar</div>
+  <div class="item" id="navSozlamalar" onclick="goSozlamalar()"><span class="ic">⚙️</span>Sozlamalar</div>
 </nav>
 
 <script src="data/bob01.js"></script>
