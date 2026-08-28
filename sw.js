@@ -1,7 +1,7 @@
 // Sarf A2 — Service Worker
 // Versiyani har safar sezilarli o'zgarish qilinganda oshiring (v1 -> v2 ...),
 // aks holda eski kesh saqlanib qolishi mumkin.
-const CACHE_NAME = 'sarf-a2-v1';
+const CACHE_NAME = 'sarf-a2-v2';
 
 const APP_SHELL = [
   './',
