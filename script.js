@@ -190,35 +190,14 @@ try {
     backAction = goHome;
     rerenderCurrent = goNatijalar;
     setActiveNav('navNatijalar');
-    if(firebaseReady || currentUser){
-      renderNatijalar();
-    } else {
-      document.getElementById('natijalarContent').innerHTML = `
-        <div class="empty-state" style="padding-top:60px;">${L('Yuklanmoqda...')}</div>`;
-      ensureFirebase().then(() => renderNatijalar());
-    }
+    renderNatijalar(); // mahalliy natijalar internetsiz ham darhol chiqadi
+    ensureFirebase(); // fonda: avval kirilgan bo'lsa, bulutdagi natijalarni sekin tortib yangilaydi
     window.scrollTo(0,0);
   }
 
   function renderNatijalar(){
     const box = document.getElementById('natijalarContent');
     if(!box) return;
-
-    if(!currentUser){
-      box.innerHTML = `
-        <div class="card" style="text-align:center;padding:28px 16px;">
-          <div style="font-size:36px;margin-bottom:10px;">📊</div>
-          <h3 style="margin-bottom:6px;">${L('Natijalaringizni saqlang')}</h3>
-          <p style="color:var(--muted);font-size:13px;margin:0 0 18px;">${L("Kirsangiz, qaysi savollarni bilganingiz boshqa qurilmada ham eslab qolinadi")}</p>
-          <div onclick="loginGoogle()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;cursor:pointer;font-weight:700;font-size:14px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;">
-            <span>🔵</span>${L('Google bilan kirish')}
-          </div>
-          <div onclick="loginAnonStart()" style="border:1.5px solid var(--line);color:var(--forest-deep);border-radius:10px;padding:12px;cursor:pointer;font-weight:700;font-size:14px;">
-            👤 ${L('Ism bilan (anonim) kirish')}
-          </div>
-        </div>`;
-      return;
-    }
 
     const rows = CHAPTERS.filter(c => c.available).map(ch => {
       const pool = buildQuizPool(ch.data);
@@ -243,18 +222,22 @@ try {
       </div>`;
     }).join('');
 
-    box.innerHTML = `
-      <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:4px;">
-        <div style="width:38px;height:38px;border-radius:50%;background:var(--forest);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0;">
-          ${(currentUser.displayName || '?').charAt(0).toUpperCase()}
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;color:var(--forest-deep);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${currentUser.displayName || L('Foydalanuvchi')}</div>
-          <div style="font-size:11.5px;color:var(--muted);">${currentUser.isAnonymous ? L('Anonim hisob') : L('Google hisobi')}</div>
-        </div>
-        <div onclick="logoutUser()" style="font-size:11.5px;color:#c65959;font-weight:700;cursor:pointer;white-space:nowrap;">${L('Chiqish')}</div>
-      </div>
-      ${rows}`;
+    const header = currentUser
+      ? `<div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:4px;">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--forest);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0;">
+            ${(currentUser.displayName || '?').charAt(0).toUpperCase()}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;color:var(--forest-deep);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${currentUser.displayName || L('Foydalanuvchi')}</div>
+            <div style="font-size:11.5px;color:var(--muted);">☁️ ${L('Bulutga sinxronlanmoqda')}</div>
+          </div>
+        </div>`
+      : `<div class="card" style="display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:4px;">
+          <div style="flex:1;font-size:12px;color:var(--muted);">${L('Natijalar shu qurilmada saqlanmoqda')}</div>
+          <div onclick="goSozlamalar()" style="font-size:12px;color:var(--forest);font-weight:700;cursor:pointer;white-space:nowrap;">☁️ ${L('Sinxronlash')}</div>
+        </div>`;
+
+    box.innerHTML = header + rows;
   }
 
   function switchTab(name){
@@ -386,6 +369,130 @@ try {
     pushStatusToCloud();
   }
 
+  // --- Bob ma'lumotidan test uchun savollar to'plamini yig'ish ---
+  function buildQuizPool(d){
+    const pool = [];
+    (d.manolar || []).forEach(m => {
+      const list = m.misollar || m.makonGuruh || [];
+      list.forEach((ex, i) => {
+        let ar, uz;
+        if(ex.lozim){
+          ar = `${ex.lozim.ar} ← ${ex.mutaaddiy.ar}`;
+          uz = `${ex.lozim.uz} → ${ex.mutaaddiy.uz}`;
+        } else if(ex.mazid){
+          ar = ex.mazid + (ex.mujarrad ? ' ← ' + ex.mujarrad : '');
+          uz = ex.uz || '';
+        } else {
+          ar = ex.ar;
+          uz = ex.uz || '';
+        }
+        pool.push({ id: `${d.bobRaqami}-${m.id}-${i}`, ar, uz });
+      });
+      (m.zamonGuruh || []).forEach((ex, i) => {
+        pool.push({ id: `${d.bobRaqami}-${m.id}-z${i}`, ar: ex.ar, uz: ex.uz });
+      });
+    });
+    return pool;
+  }
+
+  function filterPool(pool){
+    if(mashqFilter.has('hammasi')) return pool;
+    return pool.filter(p => mashqFilter.has(getQStatus(p.id)));
+  }
+
+  // --- Test tabi: filtr + boshlash ekrani ---
+  function renderMashq(d){
+    quizState = null;
+    renderMashqIntro();
+  }
+
+  function renderMashqIntro(){
+    const d = currentChapterData;
+    const box = document.getElementById('panel-mashq');
+    if(!box || !d) return;
+    const pool = filterPool(buildQuizPool(d));
+    const chip = (val, label) => `<div onclick="toggleMashqFilter('${val}')" style="padding:8px 12px;border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid ${mashqFilter.has(val) ? 'var(--forest)' : 'var(--line)'};${mashqFilter.has(val) ? 'background:var(--forest);color:#fff;' : 'color:var(--forest-deep);'}">${label}</div>`;
+    box.innerHTML = `
+      <div class="card">
+        <h3>${L('Filtr')}</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${chip('hammasi', L('Hammasi'))}
+          ${chip('bilgan', '🟢 ' + L('Bilgan'))}
+          ${chip('bilmagan', '🔴 ' + L('Bilmagan'))}
+          ${chip('none', '⚪ ' + L('Belgilanmagan'))}
+        </div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <p style="color:var(--muted);font-size:13px;margin:0 0 14px;">${L('Jami')}: ${pool.length} ${L('ta savol')}</p>
+        <div onclick="startMashq()" style="background:var(--forest);color:#fff;border-radius:10px;padding:13px;font-weight:700;font-size:14.5px;cursor:pointer;${pool.length ? '' : 'opacity:0.5;pointer-events:none;'}">▶ ${L('Testni boshlash')}</div>
+      </div>`;
+  }
+
+  window.toggleMashqFilter = function(val){
+    if(val === 'hammasi'){
+      mashqFilter = new Set(['hammasi']);
+    } else {
+      mashqFilter.delete('hammasi');
+      if(mashqFilter.has(val)) mashqFilter.delete(val); else mashqFilter.add(val);
+      if(mashqFilter.size === 0) mashqFilter = new Set(['hammasi']);
+    }
+    renderMashqIntro();
+  };
+
+  window.startMashq = function(){
+    const d = currentChapterData;
+    if(!d) return;
+    const pool = filterPool(buildQuizPool(d));
+    if(!pool.length) return;
+    quizState = { questions: shuffle(pool), current: 0, revealed: false, bilgan: 0, bilmagan: 0 };
+    renderMashqCard();
+  };
+
+  function renderMashqCard(){
+    const box = document.getElementById('panel-mashq');
+    if(!box || !quizState) return;
+    if(quizState.current >= quizState.questions.length){
+      box.innerHTML = `
+        <div class="card" style="text-align:center;padding:30px 16px;">
+          <div style="font-size:36px;margin-bottom:10px;">🎉</div>
+          <h3>${L('Test yakunlandi')}</h3>
+          <p style="color:var(--muted);font-size:13px;margin:10px 0 20px;">🟢 ${L('Bilgan')}: ${quizState.bilgan} &nbsp; 🔴 ${L('Bilmagan')}: ${quizState.bilmagan}</p>
+          <div onclick="renderMashqIntro()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;">${L('Orqaga')}</div>
+        </div>`;
+      return;
+    }
+    const q = quizState.questions[quizState.current];
+    box.innerHTML = `
+      <div class="card" style="text-align:center;padding:22px 14px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">${quizState.current+1} / ${quizState.questions.length}</div>
+        <div style="font-family:'Amiri',serif;font-size:calc(24px * var(--ar-scale));line-height:1.8;margin-bottom:18px;">${q.ar}</div>
+        ${quizState.revealed
+          ? `<div style="font-size:calc(14px * var(--uz-scale));color:var(--forest-deep);font-weight:600;margin-bottom:20px;">${L(q.uz)}</div>
+             <div style="display:flex;gap:10px;">
+               <div onclick="answerMashq('bilmagan')" style="flex:1;background:#c65959;color:#fff;border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">🔴 ${L('Bilmadim')}</div>
+               <div onclick="answerMashq('bilgan')" style="flex:1;background:#2f8a4e;color:#fff;border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">🟢 ${L('Bildim')}</div>
+             </div>`
+          : `<div onclick="revealMashq()" style="border:1.5px solid var(--line);color:var(--forest-deep);border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">${L("Javobni ko'rsatish")}</div>`
+        }
+      </div>`;
+  }
+
+  window.revealMashq = function(){
+    if(!quizState) return;
+    quizState.revealed = true;
+    renderMashqCard();
+  };
+
+  window.answerMashq = function(val){
+    if(!quizState) return;
+    const q = quizState.questions[quizState.current];
+    setQStatus(q.id, val);
+    if(val === 'bilgan') quizState.bilgan++; else quizState.bilmagan++;
+    quizState.current++;
+    quizState.revealed = false;
+    renderMashqCard();
+  };
+
   // ===== Firebase: kirish va bulutga sinxronlash =====
   let currentUser = null;
   let firebaseReady = false;
@@ -420,14 +527,16 @@ try {
   }
 
   window.loginGoogle = function(){
-    if(!auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
-    auth.signInWithPopup(googleProvider).catch(err => {
-      alert(L("Kirishda xatolik: ") + err.message);
+    ensureFirebase().then(ok => {
+      if(!ok || !auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
+      auth.signInWithPopup(googleProvider).catch(err => {
+        alert(L("Kirishda xatolik: ") + err.message);
+      });
     });
   };
 
   window.loginAnonStart = function(){
-    document.getElementById('natijalarContent').innerHTML = `
+    document.getElementById('sozlamalarContent').innerHTML = `
       <div class="card" style="text-align:center;padding:26px 16px;">
         <div style="font-size:32px;margin-bottom:10px;">👤</div>
         <h3 style="margin-bottom:12px;">${L('Ismingizni kiriting')}</h3>
@@ -443,28 +552,30 @@ try {
   window.loginAnonConfirm = function(){
     const nameInput = document.getElementById('anonNameInput');
     const name = (nameInput && nameInput.value.trim()) || L('Foydalanuvchi');
-    if(!auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
-    auth.signInAnonymously().then(cred => {
-      return cred.user.updateProfile({ displayName: name });
-    }).then(() => {
-      currentUser = auth.currentUser;
-      return pullStatusFromCloud();
-    }).then(() => {
-      renderNatijalar();
-    }).catch(err => {
-      alert(L("Kirishda xatolik: ") + err.message);
+    ensureFirebase().then(ok => {
+      if(!ok || !auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
+      auth.signInAnonymously().then(cred => {
+        return cred.user.updateProfile({ displayName: name });
+      }).then(() => {
+        currentUser = auth.currentUser;
+        return pullStatusFromCloud();
+      }).then(() => {
+        rerenderCurrent();
+      }).catch(err => {
+        alert(L("Kirishda xatolik: ") + err.message);
+      });
     });
   };
 
   window.logoutUser = function(){
-    if(!auth){ currentUser = null; renderNatijalar(); return; }
+    if(!auth){ currentUser = null; rerenderCurrent(); return; }
     auth.signOut().then(() => {
       currentUser = null;
-      renderNatijalar();
+      rerenderCurrent();
     });
   };
 
-  // Firebase'ni birinchi marta "Natijalar" ochilganda yuklaydi va
+  // Firebase'ni birinchi marta "Natijalar" yoki "Sozlamalar" ochilganda yuklaydi va
   // auth holatini kuzatib, kirilganda bulutdagi natijalarni tortib oladi.
   function ensureFirebase(){
     if(window._ensureFbPromise) return window._ensureFbPromise;
@@ -478,16 +589,107 @@ try {
         currentUser = user;
         if(user){
           pullStatusFromCloud().then(() => {
-            if(rerenderCurrent === goNatijalar) renderNatijalar();
+            if(rerenderCurrent === goNatijalar || rerenderCurrent === goSozlamalar) rerenderCurrent();
           });
-        } else if(rerenderCurrent === goNatijalar){
-          renderNatijalar();
+        } else if(rerenderCurrent === goNatijalar || rerenderCurrent === goSozlamalar){
+          rerenderCurrent();
         }
       });
       return true;
     });
     return window._ensureFbPromise;
   }
+
+  // ===== Sozlamalar sahifasi =====
+  function goSozlamalar(){
+    showView('sozlamalarView');
+    document.getElementById('backBtn').classList.remove('show');
+    document.getElementById('topTitle').textContent = L('Sozlamalar');
+    document.getElementById('topSub').textContent = '';
+    backAction = goHome;
+    rerenderCurrent = goSozlamalar;
+    setActiveNav('navSozlamalar');
+    renderSozlamalar();
+    ensureFirebase(); // fonda: login tugmalari darhol ishlashi va avvalgi kirish tiklanishi uchun
+    window.scrollTo(0,0);
+  }
+
+  function renderSozlamalar(){
+    const box = document.getElementById('sozlamalarContent');
+    if(!box) return;
+    const segBtn = (group, val, label) => `<div onclick="${group}('${val}')" style="flex:1;text-align:center;padding:10px 4px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;${SETTINGS[group==='setLang'?'lang':'theme']===val?'background:var(--forest);color:#fff;':'color:var(--forest-deep);'}">${label}</div>`;
+
+    const syncCard = currentUser
+      ? `<div class="card">
+          <h3>☁️ ${L('Bulutga sinxronlash')}</h3>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L('Kirgan')}: ${currentUser.displayName || L('Foydalanuvchi')} (${currentUser.isAnonymous ? L('anonim') : 'Google'})</p>
+          <div onclick="logoutUser()" style="border:1.5px solid var(--line);color:#c65959;border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">${L('Chiqish')}</div>
+        </div>`
+      : `<div class="card">
+          <h3>☁️ ${L('Bulutga sinxronlash')}</h3>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L("Ixtiyoriy: kirsangiz, natijalaringiz boshqa qurilmada ham saqlanadi. Kirmasangiz ham natijalar shu qurilmada saqlanaveradi")}</p>
+          <div onclick="loginGoogle()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;text-align:center;cursor:pointer;font-weight:700;font-size:13.5px;margin-bottom:8px;">🔵 ${L('Google bilan kirish')}</div>
+          <div onclick="loginAnonStart()" style="border:1.5px solid var(--line);color:var(--forest-deep);border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">👤 ${L('Ism bilan kirish')}</div>
+        </div>`;
+
+    box.innerHTML = `
+      <div class="card">
+        <h3>${L('Til')}</h3>
+        <div style="display:flex;gap:6px;background:var(--paper-2);border-radius:10px;padding:4px;">
+          ${segBtn('setLang','lotin','Lotin')}
+          ${segBtn('setLang','kirill','Кирилл')}
+        </div>
+      </div>
+      <div class="card">
+        <h3>${L('Mavzu')}</h3>
+        <div style="display:flex;gap:6px;background:var(--paper-2);border-radius:10px;padding:4px;">
+          ${segBtn('setTheme','light', L('Yorugʻ'))}
+          ${segBtn('setTheme','dark', L('Qorongʻi'))}
+          ${segBtn('setTheme','system', L('Tizim'))}
+        </div>
+      </div>
+      <div class="card">
+        <h3>${L("Arab matni o'lchami")}</h3>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div onclick="bumpScale('arScale',-0.1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">−</div>
+          <div style="flex:1;text-align:center;font-family:'Amiri',serif;font-size:calc(20px * var(--ar-scale));">مَثَلاً</div>
+          <div onclick="bumpScale('arScale',0.1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">+</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>${L("Tarjima matni o'lchami")}</h3>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div onclick="bumpScale('uzScale',-0.1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">−</div>
+          <div style="flex:1;text-align:center;font-size:calc(13px * var(--uz-scale));">${L('Namuna matn')}</div>
+          <div onclick="bumpScale('uzScale',0.1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;">+</div>
+        </div>
+      </div>
+      ${syncCard}
+      <div class="card" style="text-align:center;">
+        <div id="clearCacheBtn" onclick="clearAppCache()" style="color:#c65959;font-weight:700;font-size:13.5px;cursor:pointer;padding:6px;">🗑️ ${L('Keshni tozalash')}</div>
+      </div>
+    `;
+  }
+
+  window.setLang = function(val){
+    SETTINGS.lang = val;
+    saveSettings();
+    rerenderCurrent();
+  };
+  window.setTheme = function(val){
+    SETTINGS.theme = val;
+    saveSettings();
+    applyTheme();
+    rerenderCurrent();
+  };
+  window.bumpScale = function(key, delta){
+    let v = Math.round((SETTINGS[key] + delta) * 10) / 10;
+    v = Math.min(1.4, Math.max(0.8, v));
+    SETTINGS[key] = v;
+    saveSettings();
+    applyFontScale();
+    rerenderCurrent();
+  };
 
   // ===== Ilovani ishga tushirish =====
   goHome();
