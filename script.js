@@ -388,6 +388,7 @@ try {
 
   // ===== Firebase: kirish va bulutga sinxronlash =====
   let currentUser = null;
+  let firebaseReady = false;
   let cloudSyncTimer = null;
 
   function pushStatusToCloud(){
@@ -436,4 +437,60 @@ try {
           ${L('Kirish')}
         </div>
       </div>`;
-    setTimeout(() => { const i
+    setTimeout(() => { const i = document.getElementById('anonNameInput'); if(i) i.focus(); }, 50);
+  };
+
+  window.loginAnonConfirm = function(){
+    const nameInput = document.getElementById('anonNameInput');
+    const name = (nameInput && nameInput.value.trim()) || L('Foydalanuvchi');
+    if(!auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
+    auth.signInAnonymously().then(cred => {
+      return cred.user.updateProfile({ displayName: name });
+    }).then(() => {
+      currentUser = auth.currentUser;
+      return pullStatusFromCloud();
+    }).then(() => {
+      renderNatijalar();
+    }).catch(err => {
+      alert(L("Kirishda xatolik: ") + err.message);
+    });
+  };
+
+  window.logoutUser = function(){
+    if(!auth){ currentUser = null; renderNatijalar(); return; }
+    auth.signOut().then(() => {
+      currentUser = null;
+      renderNatijalar();
+    });
+  };
+
+  // Firebase'ni birinchi marta "Natijalar" ochilganda yuklaydi va
+  // auth holatini kuzatib, kirilganda bulutdagi natijalarni tortib oladi.
+  function ensureFirebase(){
+    if(window._ensureFbPromise) return window._ensureFbPromise;
+    window._ensureFbPromise = window.loadFirebase().then(ok => {
+      if(!ok || !auth){
+        firebaseReady = false;
+        return false;
+      }
+      firebaseReady = true;
+      auth.onAuthStateChanged(user => {
+        currentUser = user;
+        if(user){
+          pullStatusFromCloud().then(() => {
+            if(rerenderCurrent === goNatijalar) renderNatijalar();
+          });
+        } else if(rerenderCurrent === goNatijalar){
+          renderNatijalar();
+        }
+      });
+      return true;
+    });
+    return window._ensureFbPromise;
+  }
+
+  // ===== Ilovani ishga tushirish =====
+  goHome();
+} catch(e){
+  console.error('sarf-a2 script xatosi:', e);
+}
