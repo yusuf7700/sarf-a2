@@ -278,6 +278,7 @@ try {
   
   // ===== Test tizimi =====
   let quizState = null; // {questions, current, score, answered}
+  let mashqFilter = 'hammasi'; // 'hammasi' | 'bilgan' | 'bilmagan' | 'none'
 
   function shuffle(arr){
     const a = arr.slice();
@@ -286,6 +287,26 @@ try {
       [a[i],a[j]]=[a[j],a[i]];
     }
     return a;
+  }
+
+  // --- Savol natijalarini saqlash (bilgan/bilmagan/belgilanmagan) ---
+  const STATUS_KEY = 'sarfA2QuizStatus';
+  function loadQuizStatus(){
+    try {
+      const raw = localStorage.getItem(STATUS_KEY);
+      if(raw) return JSON.parse(raw);
+    } catch(e){}
+    return {};
+  }
+  const QUIZ_STATUS = loadQuizStatus();
+  function saveQuizStatus(){
+    try { localStorage.setItem(STATUS_KEY, JSON.stringify(QUIZ_STATUS)); } catch(e){}
+  }
+  function getQStatus(id){ return QUIZ_STATUS[id] || 'none'; } // 'bilgan' | 'bilmagan' | 'none'
+  function setQStatus(id, val){
+    if(!id) return;
+    QUIZ_STATUS[id] = val;
+    saveQuizStatus();
   }
 
   const FIELD_LABELS = {
@@ -298,6 +319,7 @@ try {
 
   function buildQuizPool(d){
     const pool = [];
+    const chNum = (CHAPTERS.find(c => c.data === d) || {}).n || 0;
     const fw = (d.feWaznlariJadvali && d.feWaznlariJadvali.qatorlar) || [];
 
     // 1) Fe'l shakllarini farqlash savollari
@@ -311,6 +333,7 @@ try {
         const distractors = distractorFields.map(f => row[f]).filter(v => v && v !== '-');
         if(distractors.length < 3) return;
         pool.push({
+          id: `${chNum}|1|${citation}|${target}`,
           q: L(`«${citation}» fe'lining ${FIELD_LABELS[target]} shakli qaysi?`),
           answer,
           options: [answer, ...distractors]
@@ -327,6 +350,7 @@ try {
       if(otherHarflar.length >= 3){
         const wrongs = shuffle(otherHarflar).slice(0,3);
         pool.push({
+          id: `${chNum}|2|harf`,
           q: L(`«${d.bobNomi.arab}» vazni qanday harf(lar) orttirilib hosil bo'ladi?`),
           answer: L(d.mazidHarfi.harf),
           options: [d.mazidHarfi.harf, ...wrongs].map(L)
@@ -344,6 +368,7 @@ try {
         const wrongs = shuffle(sarlavhalar.filter(s => s !== m.sarlavha)).slice(0,3);
         if(wrongs.length < 3) return;
         pool.push({
+          id: `${chNum}|3|${m.sarlavha}`,
           q: L(`«${ex.ar}» iborasi qaysi ma'no toifasiga misol bo'ladi?`),
           answer: L(m.sarlavha),
           options: [m.sarlavha, ...wrongs].map(L)
@@ -355,10 +380,33 @@ try {
   }
 
   let quizPoolCache = [];
+  let quizFilteredCache = [];
+
+  const FILTER_LABELS = {
+    hammasi: "Hammasi",
+    bilgan: "Bilganlar",
+    bilmagan: "Bilmaganlar",
+    none: "Belgilanmaganlar"
+  };
+
+  function filterPool(pool, key){
+    if(key === 'hammasi') return pool;
+    return pool.filter(p => getQStatus(p.id) === key);
+  }
+
+  window.selectMashqFilter = function(key){
+    mashqFilter = key;
+    renderMashqBody();
+  };
 
   function renderMashq(d){
-    const pool = buildQuizPool(d);
-    quizPoolCache = pool;
+    quizPoolCache = buildQuizPool(d);
+    mashqFilter = 'hammasi';
+    renderMashqBody();
+  }
+
+  function renderMashqBody(){
+    const pool = quizPoolCache;
     if(pool.length < 3){
       document.getElementById('panel-mashq').innerHTML = `
         <div class="empty-state" style="padding-top:60px;">
@@ -367,24 +415,50 @@ try {
         </div>`;
       return;
     }
-    const presets = [...new Set([5,10,15,20,pool.length].filter(n => n>0 && n<=pool.length))].sort((a,b)=>a-b);
+    const counts = {
+      hammasi: pool.length,
+      bilgan: pool.filter(p => getQStatus(p.id) === 'bilgan').length,
+      bilmagan: pool.filter(p => getQStatus(p.id) === 'bilmagan').length,
+      none: pool.filter(p => getQStatus(p.id) === 'none').length
+    };
+    const filtered = filterPool(pool, mashqFilter);
+    quizFilteredCache = filtered;
+
+    const chips = ['hammasi','bilgan','bilmagan','none'].map(key => {
+      const active = key === mashqFilter;
+      return `<div onclick="selectMashqFilter('${key}')"
+        style="border:1.5px solid ${active ? 'var(--forest)' : 'var(--line)'};background:${active ? 'var(--forest)' : 'transparent'};color:${active ? '#fff' : 'var(--forest-deep)'};border-radius:10px;padding:7px 12px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;">
+        ${L(FILTER_LABELS[key])} (${counts[key]})
+      </div>`;
+    }).join('');
+
+    let presetsHtml;
+    if(filtered.length === 0){
+      presetsHtml = `<div class="empty-state" style="padding:20px 0 0;">${L("Bu toifada savol yo'q")}</div>`;
+    } else {
+      const presets = [...new Set([5,10,15,20,filtered.length].filter(n => n>0 && n<=filtered.length))].sort((a,b)=>a-b);
+      presetsHtml = `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px;">
+        ${presets.map(n => `
+          <div onclick="startQuiz(${n})" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:700;color:var(--forest-deep);">
+            ${n === filtered.length ? `${L('Barchasi')} (${n})` : n}
+          </div>`).join('')}
+      </div>`;
+    }
+
     document.getElementById('panel-mashq').innerHTML = `
-      <div class="card" style="text-align:center;padding:26px 16px;">
-        <div style="font-size:34px;margin-bottom:8px;">📝</div>
-        <h3 style="margin-bottom:6px;">${L('Test tayyor')}</h3>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 16px;">${L('Jami')} <b style="color:var(--forest-deep);">${pool.length}</b> ${L('ta savol mavjud. Nechtasini yechmoqchisiz?')}</p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-          ${presets.map(n => `
-            <div onclick="startQuiz(${n})" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:700;color:var(--forest-deep);">
-              ${n === pool.length ? `${L('Barchasi')} (${n})` : n}
-            </div>`).join('')}
-        </div>
+      <div class="card" style="text-align:center;padding:22px 16px;">
+        <div style="font-size:34px;margin-bottom:6px;">📝</div>
+        <h3 style="margin-bottom:10px;">${L('Test tayyor')}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;justify-content:center;">${chips}</div>
+        <p style="color:var(--muted);font-size:12.5px;margin:14px 0 0;">${L('Nechtasini yechmoqchisiz?')}</p>
+        ${presetsHtml}
       </div>`;
   }
 
   window.startQuiz = function(n){
-    const picked = shuffle(quizPoolCache).slice(0, n);
+    const picked = shuffle(quizFilteredCache).slice(0, n);
     const questions = picked.map(item => ({
+      id: item.id,
       q: item.q,
       options: shuffle(item.options),
       answer: item.answer
@@ -402,148 +476,4 @@ try {
           <div style="font-size:36px;margin-bottom:8px;">🎉</div>
           <h3 style="margin-bottom:6px;">${L('Test yakunlandi!')}</h3>
           <p style="font-size:14px;color:var(--muted);margin:0 0 16px;">${L('Natija')}: <b style="color:var(--forest-deep);">${s.score} / ${s.questions.length}</b></p>
-          <div class="tab" style="display:inline-block;background:var(--forest);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;border:none;font-size:13px;" onclick="restartQuiz()">${L('Qayta boshlash')}</div>
-        </div>`;
-      return;
-    }
-    const q = s.questions[s.current];
-    const html = `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:10px;">
-          <span>${L('Savol')} ${s.current+1} / ${s.questions.length}</span>
-          <span>${L('Ball')}: ${s.score}</span>
-        </div>
-        <h3 style="direction:rtl;text-align:right;font-family:'Amiri',serif;font-size:19px;line-height:1.6;">${q.q}</h3>
-        <div id="quizOptions" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
-          ${q.options.map((opt,i) => `
-            <div class="quiz-opt" data-i="${i}" onclick="answerQuiz(${i})"
-              style="border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;font-size:13.5px;direction:rtl;text-align:right;">
-              ${opt}
-            </div>`).join('')}
-        </div>
-      </div>`;
-    document.getElementById('panel-mashq').innerHTML = html;
-  }
-
-  window.answerQuiz = function(i){
-    const s = quizState;
-    if(!s || s.answered) return;
-    s.answered = true;
-    const q = s.questions[s.current];
-    const opts = document.querySelectorAll('.quiz-opt');
-    opts.forEach(el => {
-      const idx = Number(el.dataset.i);
-      if(q.options[idx] === q.answer){
-        el.style.background = '#e6f4ea'; el.style.borderColor = '#2f8a4e'; el.style.color = '#1f5c33';
-      } else if(idx === i){
-        el.style.background = '#fdeaea'; el.style.borderColor = '#c65959'; el.style.color = '#8a2f2f';
-      }
-      el.onclick = null;
-    });
-    if(q.options[i] === q.answer) s.score++;
-    setTimeout(() => {
-      s.current++;
-      s.answered = false;
-      renderQuizQuestion();
-    }, 900);
-  };
-
-  window.restartQuiz = function(){
-    if(currentChapterData) renderMashq(currentChapterData);
-  };
-
-  // ===== Sozlamalar =====
-  function goSozlamalar(){
-    showView('sozlamalarView');
-    document.getElementById('backBtn').classList.add('show');
-    document.getElementById('topTitle').textContent = L('Sozlamalar');
-    document.getElementById('topSub').textContent = '';
-    backAction = goHome;
-    rerenderCurrent = goSozlamalar;
-    setActiveNav('navSozlamalar');
-    renderSozlamalar();
-    window.scrollTo(0,0);
-  }
-
-  function pillRow(options, currentVal, onclickName){
-    return `<div style="display:flex;flex-wrap:wrap;gap:8px;">${options.map(o => `
-      <div onclick="${onclickName}('${o.val}')"
-        style="border:1.5px solid ${o.val===currentVal?'var(--forest)':'var(--line)'};background:${o.val===currentVal?'var(--forest)':'transparent'};color:${o.val===currentVal?'#fff':'var(--ink)'};border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;">
-        ${o.label}
-      </div>`).join('')}</div>`;
-  }
-
-  function renderSozlamalar(){
-    const html = `
-      <div class="card">
-        <h3>${L('Til')}</h3>
-        ${pillRow([{val:'lotin',label:"O'zbek lotin"},{val:'kirill',label:'Ўзбек кирилл'}], SETTINGS.lang, 'setLang')}
-      </div>
-
-      <div class="card">
-        <h3>${L("Arabcha shrift o'lchami")}</h3>
-        <input type="range" id="arScaleRange" min="0.8" max="1.6" step="0.1" value="${SETTINGS.arScale}"
-          style="width:100%;" oninput="setArScale(this.value)">
-        <div class="example" style="border:none;padding-top:10px;">
-          <span class="ar" style="font-size:calc(20px * var(--ar-scale));">أَكْرَمَ</span>
-          <span class="uz" style="max-width:none;">${Math.round(SETTINGS.arScale*100)}%</span>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>${L("O'zbekcha shrift o'lchami")}</h3>
-        <input type="range" id="uzScaleRange" min="0.8" max="1.6" step="0.1" value="${SETTINGS.uzScale}"
-          style="width:100%;" oninput="setUzScale(this.value)">
-        <div class="note" style="font-size:calc(13px * var(--uz-scale));">${L('Namuna matn shu yerda kattalashadi')} (${Math.round(SETTINGS.uzScale*100)}%)</div>
-      </div>
-
-      <div class="card">
-        <h3>${L('Rejim')}</h3>
-        ${pillRow([{val:'light',label:L('Kunduzgi')},{val:'dark',label:L('Tungi')},{val:'system',label:L('Tizim')}], SETTINGS.theme, 'setTheme')}
-      </div>`;
-    document.getElementById('sozlamalarContent').innerHTML = html;
-  }
-
-  window.setLang = function(v){
-    SETTINGS.lang = v; saveSettings();
-    rerenderCurrent();
-    renderSozlamalar();
-  };
-  window.setArScale = function(v){
-    SETTINGS.arScale = Number(v); saveSettings(); applyFontScale();
-    renderSozlamalar();
-  };
-  window.setUzScale = function(v){
-    SETTINGS.uzScale = Number(v); saveSettings(); applyFontScale();
-    renderSozlamalar();
-  };
-  window.setTheme = function(v){
-    SETTINGS.theme = v; saveSettings(); applyTheme();
-    renderSozlamalar();
-  };
-
-  try {
-    goHome();
-    const ok = document.createElement('div');
-    ok.textContent = '✓ Script OK, boblar: ' + CHAPTERS.length;
-    ok.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:#1b4d3e;color:#fff;font-size:10px;padding:4px 8px;';
-    document.body.appendChild(ok);
-    setTimeout(() => ok.remove(), 4000);
-  } catch(err) {
-    showFatalError(err);
-  }
-  
-} catch(err) {
-  showFatalError(err);
-}
-
-function showFatalError(err){
-  try {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#fff3f3;border-bottom:3px solid #c65959;color:#7a1f1f;font-size:12px;padding:14px;white-space:pre-wrap;font-family:monospace;max-height:80vh;overflow:auto;';
-    box.innerHTML = '<b>SCRIPT XATOSI:</b>\n' + (err && err.message) + '\n\n' + (err && err.stack || '');
-    document.body.appendChild(box);
-  } catch(e2){
-    alert('Xato: ' + (err && err.message));
-  }
-}
+          <div class="tab" style="display:inline-block;background:var(--forest);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;border:none;font-size:13px;" onclick="restartQuiz()">${L('Qayt
