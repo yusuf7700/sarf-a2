@@ -207,7 +207,7 @@ try {
       const pct = pool.length ? Math.round((bilgan/pool.length)*100) : 0;
       return `<div class="card" style="padding:14px 16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-weight:700;color:var(--forest-deep);font-size:13.5px;">${ch.n}-${L('bob')}: ${L(ch.uz)}</div>
+          <div style="font-weight:700;color:var(--text-accent);font-size:13.5px;">${ch.n}-${L('bob')}: ${L(ch.uz)}</div>
           <div style="font-size:12px;color:var(--muted);">${pct}%</div>
         </div>
         <div style="height:7px;border-radius:5px;background:var(--paper-2);overflow:hidden;display:flex;">
@@ -228,7 +228,7 @@ try {
             ${(currentUser.displayName || '?').charAt(0).toUpperCase()}
           </div>
           <div style="flex:1;min-width:0;">
-            <div style="font-weight:700;color:var(--forest-deep);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${currentUser.displayName || L('Foydalanuvchi')}</div>
+            <div style="font-weight:700;color:var(--text-accent);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${currentUser.displayName || L('Foydalanuvchi')}</div>
             <div style="font-size:11.5px;color:var(--muted);">☁️ ${L('Bulutga sinxronlanmoqda')}</div>
           </div>
         </div>`
@@ -369,29 +369,82 @@ try {
     pushStatusToCloud();
   }
 
-  // --- Bob ma'lumotidan test uchun savollar to'plamini yig'ish ---
+  // --- Bob ma'lumotidan 3 turdagi savol avtomatik generatsiya qilinadi ---
+  const MASHQ_FIELD_LABELS = {
+    muzore: "muzore' (hozirgi-kelasi zamon)",
+    amr: 'amr',
+    masdar: 'masdar',
+    foil: "ismi foil"
+  };
+
+  function pickRandomN(arr, n){
+    return shuffle(arr).slice(0, n);
+  }
+
   function buildQuizPool(d){
     const pool = [];
-    (d.manolar || []).forEach(m => {
-      const list = m.misollar || m.makonGuruh || [];
-      list.forEach((ex, i) => {
-        let ar, uz;
-        if(ex.lozim){
-          ar = `${ex.lozim.ar} ← ${ex.mutaaddiy.ar}`;
-          uz = `${ex.lozim.uz} → ${ex.mutaaddiy.uz}`;
-        } else if(ex.mazid){
-          ar = ex.mazid + (ex.mujarrad ? ' ← ' + ex.mujarrad : '');
-          uz = ex.uz || '';
-        } else {
-          ar = ex.ar;
-          uz = ex.uz || '';
-        }
-        pool.push({ id: `${d.bobRaqami}-${m.id}-${i}`, ar, uz });
-      });
-      (m.zamonGuruh || []).forEach((ex, i) => {
-        pool.push({ id: `${d.bobRaqami}-${m.id}-z${i}`, ar: ex.ar, uz: ex.uz });
+    const n = d.bobRaqami;
+
+    // 1-tur: fe'l shakllarini farqlash (jadvaldagi har qator, 4 maydon)
+    const fields = ['muzore','amr','masdar','foil'];
+    (d.feWaznlariJadvali ? d.feWaznlariJadvali.qatorlar : []).forEach(row => {
+      fields.forEach(correctField => {
+        const correct = row[correctField];
+        const distractors = fields.filter(f => f !== correctField).map(f => row[f]);
+        if(!correct || distractors.length < 3 || distractors.some(v => !v)) return;
+        pool.push({
+          id: `${n}|1|${row.mazidMozi}|${correctField}`,
+          prompt: `«${row.mazidMozi}» fe'lining ${MASHQ_FIELD_LABELS[correctField]} shakli qaysi?`,
+          correct,
+          options: shuffle([correct, ...distractors]),
+          arabic: true
+        });
       });
     });
+
+    // 2-tur: vazn qanday harf bilan hosil bo'ladi (boshqa boblar bilan solishtirib)
+    if(d.mazidHarfi && d.mazidHarfi.harf){
+      const correct = d.mazidHarfi.harf;
+      const others = CHAPTERS
+        .filter(c => c.n !== n && c.data.mazidHarfi && c.data.mazidHarfi.harf)
+        .map(c => c.data.mazidHarfi.harf);
+      if(others.length >= 3){
+        const distractors = pickRandomN(others, 3);
+        pool.push({
+          id: `${n}|2|harf`,
+          prompt: `«${d.bobNomi.arab}» vazni qanday harf(lar) orttirilib hosil bo'ladi?`,
+          correct,
+          options: shuffle([correct, ...distractors]),
+          arabic: false
+        });
+      }
+    }
+
+    // 3-tur: ibora qaysi ma'no toifasiga oid (shu bobdagi boshqa toifalar bilan)
+    const manolar = d.manolar || [];
+    if(manolar.length >= 4){
+      manolar.forEach(m => {
+        const list = m.misollar || m.makonGuruh || [];
+        if(!list.length) return;
+        const ex = list[0];
+        let phrase = null;
+        if(ex.ar) phrase = ex.ar;
+        else if(ex.mutaaddiy) phrase = ex.mutaaddiy.ar;
+        else if(ex.mazid) phrase = ex.mazid;
+        if(!phrase) return;
+        const others = manolar.filter(x => x.id !== m.id).map(x => x.sarlavha);
+        if(others.length < 3) return;
+        const distractors = pickRandomN(others, 3);
+        pool.push({
+          id: `${n}|3|${m.id}`,
+          prompt: `«${phrase}» iborasi qaysi ma'no toifasiga misol bo'ladi?`,
+          correct: m.sarlavha,
+          options: shuffle([m.sarlavha, ...distractors]),
+          arabic: false
+        });
+      });
+    }
+
     return pool;
   }
 
@@ -400,7 +453,7 @@ try {
     return pool.filter(p => mashqFilter.has(getQStatus(p.id)));
   }
 
-  // --- Test tabi: filtr + boshlash ekrani ---
+  // --- Test tabi: filtr + miqdor tanlash ekrani ---
   function renderMashq(d){
     quizState = null;
     renderMashqIntro();
@@ -410,8 +463,19 @@ try {
     const d = currentChapterData;
     const box = document.getElementById('panel-mashq');
     if(!box || !d) return;
-    const pool = filterPool(buildQuizPool(d));
-    const chip = (val, label) => `<div onclick="toggleMashqFilter('${val}')" style="padding:8px 12px;border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid ${mashqFilter.has(val) ? 'var(--forest)' : 'var(--line)'};${mashqFilter.has(val) ? 'background:var(--forest);color:#fff;' : 'color:var(--forest-deep);'}">${label}</div>`;
+    const pool = buildQuizPool(d);
+    const counts = {
+      hammasi: pool.length,
+      bilgan: pool.filter(p => getQStatus(p.id) === 'bilgan').length,
+      bilmagan: pool.filter(p => getQStatus(p.id) === 'bilmagan').length,
+      none: pool.filter(p => getQStatus(p.id) === 'none').length
+    };
+    const chip = (val, label) => `<div onclick="toggleMashqFilter('${val}')" style="padding:8px 12px;border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid ${mashqFilter.has(val) ? 'var(--forest)' : 'var(--line)'};${mashqFilter.has(val) ? 'background:var(--forest);color:#fff;' : 'color:var(--text-accent);'}">${label} (${counts[val]})</div>`;
+
+    const filtered = filterPool(pool);
+    const qtyOptions = [5,10,15,20].filter(q => q < filtered.length);
+    const qtyBtn = (val, label) => `<div onclick="startMashq(${val})" style="flex:1;min-width:56px;text-align:center;padding:11px 4px;border-radius:8px;border:1.5px solid var(--line);color:var(--text-accent);font-weight:700;font-size:13px;cursor:pointer;">${label}</div>`;
+
     box.innerHTML = `
       <div class="card">
         <h3>${L('Filtr')}</h3>
@@ -423,8 +487,13 @@ try {
         </div>
       </div>
       <div class="card" style="text-align:center;">
-        <p style="color:var(--muted);font-size:13px;margin:0 0 14px;">${L('Jami')}: ${pool.length} ${L('ta savol')}</p>
-        <div onclick="startMashq()" style="background:var(--forest);color:#fff;border-radius:10px;padding:13px;font-weight:700;font-size:14.5px;cursor:pointer;${pool.length ? '' : 'opacity:0.5;pointer-events:none;'}">▶ ${L('Testni boshlash')}</div>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 14px;">${L('Tanlangan filtrda')}: ${filtered.length} ${L('ta savol')}</p>
+        ${filtered.length ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+            ${qtyOptions.map(q => qtyBtn(q, q)).join('')}
+            ${qtyBtn(0, L('Barchasi'))}
+          </div>
+        ` : `<p style="color:var(--muted);font-size:12.5px;">${L("Bu filtrda savollar yo'q")}</p>`}
       </div>`;
   }
 
@@ -439,12 +508,14 @@ try {
     renderMashqIntro();
   };
 
-  window.startMashq = function(){
+  window.startMashq = function(qty){
     const d = currentChapterData;
     if(!d) return;
     const pool = filterPool(buildQuizPool(d));
     if(!pool.length) return;
-    quizState = { questions: shuffle(pool), current: 0, revealed: false, bilgan: 0, bilmagan: 0 };
+    const shuffled = shuffle(pool);
+    const questions = qty && qty > 0 ? shuffled.slice(0, qty) : shuffled;
+    quizState = { questions, current: 0, correctCount: 0, wrongCount: 0, answered: false, selected: null };
     renderMashqCard();
   };
 
@@ -456,40 +527,46 @@ try {
         <div class="card" style="text-align:center;padding:30px 16px;">
           <div style="font-size:36px;margin-bottom:10px;">🎉</div>
           <h3>${L('Test yakunlandi')}</h3>
-          <p style="color:var(--muted);font-size:13px;margin:10px 0 20px;">🟢 ${L('Bilgan')}: ${quizState.bilgan} &nbsp; 🔴 ${L('Bilmagan')}: ${quizState.bilmagan}</p>
+          <p style="color:var(--muted);font-size:13px;margin:10px 0 20px;">🟢 ${L("To'g'ri")}: ${quizState.correctCount} &nbsp; 🔴 ${L("Noto'g'ri")}: ${quizState.wrongCount}</p>
           <div onclick="renderMashqIntro()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;">${L('Orqaga')}</div>
         </div>`;
       return;
     }
     const q = quizState.questions[quizState.current];
+    const optHtml = q.options.map((opt, idx) => {
+      let bg = 'transparent', border = 'var(--line)', color = 'var(--forest-deep)';
+      if(quizState.answered){
+        if(opt === q.correct){ bg = '#2f8a4e'; border = '#2f8a4e'; color = '#fff'; }
+        else if(opt === quizState.selected){ bg = '#c65959'; border = '#c65959'; color = '#fff'; }
+      }
+      return `<div onclick="answerMashq(${idx})" style="border:1.5px solid ${border};background:${bg};color:${color};border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer;font-weight:600;font-size:${q.arabic ? '17px' : '13.5px'};${q.arabic ? "font-family:'Amiri',serif;" : ''}text-align:${q.arabic ? 'center' : 'left'};">${opt}</div>`;
+    }).join('');
     box.innerHTML = `
-      <div class="card" style="text-align:center;padding:22px 14px;">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">${quizState.current+1} / ${quizState.questions.length}</div>
-        <div style="font-family:'Amiri',serif;font-size:calc(24px * var(--ar-scale));line-height:1.8;margin-bottom:18px;">${q.ar}</div>
-        ${quizState.revealed
-          ? `<div style="font-size:calc(14px * var(--uz-scale));color:var(--forest-deep);font-weight:600;margin-bottom:20px;">${L(q.uz)}</div>
-             <div style="display:flex;gap:10px;">
-               <div onclick="answerMashq('bilmagan')" style="flex:1;background:#c65959;color:#fff;border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">🔴 ${L('Bilmadim')}</div>
-               <div onclick="answerMashq('bilgan')" style="flex:1;background:#2f8a4e;color:#fff;border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">🟢 ${L('Bildim')}</div>
-             </div>`
-          : `<div onclick="revealMashq()" style="border:1.5px solid var(--line);color:var(--forest-deep);border-radius:10px;padding:13px;font-weight:700;cursor:pointer;">${L("Javobni ko'rsatish")}</div>`
-        }
+      <div class="card" style="padding:20px 16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">${quizState.current+1} / ${quizState.questions.length}</div>
+        <div style="font-size:14px;line-height:1.6;margin-bottom:16px;color:var(--text-accent);font-weight:600;">${q.prompt}</div>
+        ${optHtml}
+        ${quizState.answered ? `<div onclick="nextMashq()" style="margin-top:10px;background:var(--forest);color:#fff;border-radius:10px;padding:12px;text-align:center;font-weight:700;cursor:pointer;">${L('Keyingisi')} →</div>` : ''}
       </div>`;
   }
 
-  window.revealMashq = function(){
-    if(!quizState) return;
-    quizState.revealed = true;
+  window.answerMashq = function(idx){
+    if(!quizState || quizState.answered) return;
+    const q = quizState.questions[quizState.current];
+    const opt = q.options[idx];
+    quizState.answered = true;
+    quizState.selected = opt;
+    const isCorrect = opt === q.correct;
+    setQStatus(q.id, isCorrect ? 'bilgan' : 'bilmagan');
+    if(isCorrect) quizState.correctCount++; else quizState.wrongCount++;
     renderMashqCard();
   };
 
-  window.answerMashq = function(val){
+  window.nextMashq = function(){
     if(!quizState) return;
-    const q = quizState.questions[quizState.current];
-    setQStatus(q.id, val);
-    if(val === 'bilgan') quizState.bilgan++; else quizState.bilmagan++;
     quizState.current++;
-    quizState.revealed = false;
+    quizState.answered = false;
+    quizState.selected = null;
     renderMashqCard();
   };
 
@@ -617,7 +694,7 @@ try {
   function renderSozlamalar(){
     const box = document.getElementById('sozlamalarContent');
     if(!box) return;
-    const segBtn = (group, val, label) => `<div onclick="${group}('${val}')" style="flex:1;text-align:center;padding:10px 4px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;${SETTINGS[group==='setLang'?'lang':'theme']===val?'background:var(--forest);color:#fff;':'color:var(--forest-deep);'}">${label}</div>`;
+    const segBtn = (group, val, label) => `<div onclick="${group}('${val}')" style="flex:1;text-align:center;padding:10px 4px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;${SETTINGS[group==='setLang'?'lang':'theme']===val?'background:var(--forest);color:#fff;':'color:var(--text-accent);'}">${label}</div>`;
 
     const syncCard = currentUser
       ? `<div class="card">
@@ -629,7 +706,7 @@ try {
           <h3>☁️ ${L('Bulutga sinxronlash')}</h3>
           <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L("Ixtiyoriy: kirsangiz, natijalaringiz boshqa qurilmada ham saqlanadi. Kirmasangiz ham natijalar shu qurilmada saqlanaveradi")}</p>
           <div onclick="loginGoogle()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;text-align:center;cursor:pointer;font-weight:700;font-size:13.5px;margin-bottom:8px;">🔵 ${L('Google bilan kirish')}</div>
-          <div onclick="loginAnonStart()" style="border:1.5px solid var(--line);color:var(--forest-deep);border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">👤 ${L('Ism bilan kirish')}</div>
+          <div onclick="loginAnonStart()" style="border:1.5px solid var(--line);color:var(--text-accent);border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">👤 ${L('Ism bilan kirish')}</div>
         </div>`;
 
     box.innerHTML = `
