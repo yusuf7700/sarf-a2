@@ -534,7 +534,7 @@ try {
     }
     const q = quizState.questions[quizState.current];
     const optHtml = q.options.map((opt, idx) => {
-      let bg = 'transparent', border = 'var(--line)', color = 'var(--forest-deep)';
+      let bg = 'transparent', border = 'var(--line)', color = 'var(--text-accent)';
       if(quizState.answered){
         if(opt === q.correct){ bg = '#2f8a4e'; border = '#2f8a4e'; color = '#fff'; }
         else if(opt === quizState.selected){ bg = '#c65959'; border = '#c65959'; color = '#fff'; }
