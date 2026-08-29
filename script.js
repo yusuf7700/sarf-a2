@@ -612,38 +612,6 @@ try {
     });
   };
 
-  window.loginAnonStart = function(){
-    document.getElementById('sozlamalarContent').innerHTML = `
-      <div class="card" style="text-align:center;padding:26px 16px;">
-        <div style="font-size:32px;margin-bottom:10px;">👤</div>
-        <h3 style="margin-bottom:12px;">${L('Ismingizni kiriting')}</h3>
-        <input id="anonNameInput" type="text" placeholder="${L('Masalan: Yusuf')}" maxlength="30"
-          style="width:100%;box-sizing:border-box;border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;font-size:14px;font-family:'Manrope',sans-serif;text-align:center;margin-bottom:12px;">
-        <div onclick="loginAnonConfirm()" style="background:var(--forest);color:#fff;border-radius:10px;padding:11px;cursor:pointer;font-weight:700;font-size:14px;">
-          ${L('Kirish')}
-        </div>
-      </div>`;
-    setTimeout(() => { const i = document.getElementById('anonNameInput'); if(i) i.focus(); }, 50);
-  };
-
-  window.loginAnonConfirm = function(){
-    const nameInput = document.getElementById('anonNameInput');
-    const name = (nameInput && nameInput.value.trim()) || L('Foydalanuvchi');
-    ensureFirebase().then(ok => {
-      if(!ok || !auth){ alert(L("Internet aloqasi yo'q, keyinroq urinib ko'ring")); return; }
-      auth.signInAnonymously().then(cred => {
-        return cred.user.updateProfile({ displayName: name });
-      }).then(() => {
-        currentUser = auth.currentUser;
-        return pullStatusFromCloud();
-      }).then(() => {
-        rerenderCurrent();
-      }).catch(err => {
-        alert(L("Kirishda xatolik: ") + err.message);
-      });
-    });
-  };
-
   window.logoutUser = function(){
     if(!auth){ currentUser = null; rerenderCurrent(); return; }
     auth.signOut().then(() => {
@@ -699,14 +667,13 @@ try {
     const syncCard = currentUser
       ? `<div class="card">
           <h3>☁️ ${L('Bulutga sinxronlash')}</h3>
-          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L('Kirgan')}: ${currentUser.displayName || L('Foydalanuvchi')} (${currentUser.isAnonymous ? L('anonim') : 'Google'})</p>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L('Kirgan')}: ${currentUser.displayName || L('Foydalanuvchi')} (Google)</p>
           <div onclick="logoutUser()" style="border:1.5px solid var(--line);color:#c65959;border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">${L('Chiqish')}</div>
         </div>`
       : `<div class="card">
           <h3>☁️ ${L('Bulutga sinxronlash')}</h3>
           <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">${L("Ixtiyoriy: kirsangiz, natijalaringiz boshqa qurilmada ham saqlanadi. Kirmasangiz ham natijalar shu qurilmada saqlanaveradi")}</p>
-          <div onclick="loginGoogle()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;text-align:center;cursor:pointer;font-weight:700;font-size:13.5px;margin-bottom:8px;">🔵 ${L('Google bilan kirish')}</div>
-          <div onclick="loginAnonStart()" style="border:1.5px solid var(--line);color:var(--text-accent);border-radius:10px;padding:11px;text-align:center;font-weight:700;font-size:13.5px;cursor:pointer;">👤 ${L('Ism bilan kirish')}</div>
+          <div onclick="loginGoogle()" style="background:var(--forest);color:#fff;border-radius:10px;padding:12px;text-align:center;cursor:pointer;font-weight:700;font-size:13.5px;">🔵 ${L('Google bilan kirish')}</div>
         </div>`;
 
     box.innerHTML = `
