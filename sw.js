@@ -1,7 +1,7 @@
 // Sarf A2 — Service Worker
 // Versiyani har safar sezilarli o'zgarish qilinganda oshiring (v1 -> v2 ...),
 // aks holda eski kesh saqlanib qolishi mumkin.
-const CACHE_NAME = 'sarf-a2-v14';
+const CACHE_NAME = 'sarf-a2-v15';
 
 const APP_SHELL = [
   './',
@@ -23,7 +23,8 @@ const APP_SHELL = [
   'data/bob11.js',
   'data/bob12.js',
   'icons/icon-192.png',
-  'icons/icon-512.png'
+  'icons/icon-512.png',
+  'icons/icon-512-maskable.png'
 ];
 
 // O'rnatish — app shell'ni keshga oladi
