@@ -35,6 +35,49 @@
 </header>
 
 <div id="homeView">
+
+<!-- PWA o'rnatish bloki: doʻstlar havolani ochgan zahoti koʻrinishi uchun
+     Bosh sahifaning eng tepasida, katta va koʻzga tashlanadigan qilib qoʻyilgan -->
+<div id="pwaInstallBlock" style="display:none; padding:16px 14px 4px;">
+  <div style="background:linear-gradient(135deg,#123a28,#1f6b45);border-radius:18px;padding:20px 18px;box-shadow:0 8px 20px rgba(0,0,0,0.18);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <img src="icons/icon-192.png" style="width:46px;height:46px;border-radius:13px;flex-shrink:0;box-shadow:0 3px 8px rgba(0,0,0,0.25);">
+      <div>
+        <div style="color:#fff;font-weight:800;font-size:16px;line-height:1.25;">Sarf A2'ni o'rnating</div>
+        <div style="color:#cdeadb;font-size:12.5px;margin-top:2px;">Internetsiz ham ishlaydi, 1 marta bosish kifoya</div>
+      </div>
+    </div>
+    <button id="pwaInstallBtn" type="button" style="
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      padding:16px 18px;
+      border:none;
+      border-radius:14px;
+      background:#f7f0e6;
+      color:#123a28;
+      font-family:'Manrope',sans-serif;
+      font-weight:800;
+      font-size:16px;
+      cursor:pointer;
+    ">
+      <span style="font-size:20px;">⬇️</span>
+      Ilova sifatida o'rnatish
+    </button>
+    <p id="pwaInstallHint" style="
+      margin-top:10px;
+      margin-bottom:0;
+      font-family:'Manrope',sans-serif;
+      font-size:12.5px;
+      color:#cdeadb;
+      text-align:center;
+      display:none;
+    "></p>
+  </div>
+</div>
+
 <div class="hero">
 <div class="hero-root">
 <div class="letter">ل</div>
@@ -68,39 +111,6 @@
 
 <div id="sozlamalarView" style="display:none;">
 <div id="sozlamalarContent" style="padding:16px 14px 30px;"></div>
-
-<!-- PWA o'rnatish bloki: sozlamalarContent tashqarisida joylashgan,
-     shuning uchun script.js sozlamalarContent'ni qayta chizganda ham
-     bu blok o'chib ketmaydi -->
-<div id="pwaInstallBlock" style="display:none; padding:0 14px 30px;">
-  <button id="pwaInstallBtn" type="button" style="
-    width:100%;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:10px;
-    padding:14px 18px;
-    border:none;
-    border-radius:14px;
-    background:#0e3522;
-    color:#f7f0e6;
-    font-family:'Manrope',sans-serif;
-    font-weight:700;
-    font-size:15px;
-    cursor:pointer;
-  ">
-    <span style="font-size:18px;">⬇️</span>
-    Ilova sifatida o'rnatish
-  </button>
-  <p id="pwaInstallHint" style="
-    margin-top:10px;
-    font-family:'Manrope',sans-serif;
-    font-size:13px;
-    color:#7a7368;
-    text-align:center;
-    display:none;
-  "></p>
-</div>
 
 </div>
 </div>
