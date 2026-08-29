@@ -77,6 +77,33 @@
       <span style="font-size:20px;">⬇️</span>
       Ilova sifatida o'rnatish
     </button>
+
+    <!-- iOS uchun grafikli qadamlar (beforeinstallprompt yo'q, shuning uchun qo'lda ko'rsatamiz) -->
+    <div id="pwaIOSSteps" style="display:none;">
+      <div id="iosStep1" style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.08);border-radius:12px;padding:12px 14px;margin-bottom:8px;">
+        <svg id="iosStep1Icon" viewBox="0 0 24 24" fill="none" stroke="#f7f0e6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" style="flex-shrink:0;">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M15.2 8.8l-2 5-5 2 2-5 5-2z"/>
+        </svg>
+        <div id="iosStep1Text" style="color:#f7f0e6;font-size:13.5px;font-weight:600;line-height:1.4;">Havolani <b>Safari</b> brauzerida oching</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.08);border-radius:12px;padding:12px 14px;margin-bottom:8px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f7f0e6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" style="flex-shrink:0;">
+          <path d="M12 3v12"/>
+          <path d="M8 7l4-4 4 4"/>
+          <path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>
+        </svg>
+        <div style="color:#f7f0e6;font-size:13.5px;font-weight:600;line-height:1.4;">Pastdagi <b>Ulashish</b> 📤 tugmasini bosing</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.08);border-radius:12px;padding:12px 14px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f7f0e6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" style="flex-shrink:0;">
+          <rect x="3" y="3" width="18" height="18" rx="4"/>
+          <path d="M12 8v8M8 12h8"/>
+        </svg>
+        <div style="color:#f7f0e6;font-size:13.5px;font-weight:600;line-height:1.4;"><b>"Bosh ekranga qo'shish"</b>ni tanlang</div>
+      </div>
+    </div>
+
     <p id="pwaInstallHint" style="
       margin-top:10px;
       margin-bottom:0;
@@ -186,6 +213,10 @@
   var installBlock = document.getElementById('pwaInstallBlock');
   var installBtn = document.getElementById('pwaInstallBtn');
   var installHint = document.getElementById('pwaInstallHint');
+  var iosSteps = document.getElementById('pwaIOSSteps');
+  var iosStep1 = document.getElementById('iosStep1');
+  var iosStep1Icon = document.getElementById('iosStep1Icon');
+  var iosStep1Text = document.getElementById('iosStep1Text');
 
   function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
@@ -194,6 +225,13 @@
 
   function isIOS() {
     return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  }
+
+  // Haqiqiy Safari'ni Chrome/Firefox/in-app brauzerlardan (Telegram, Instagram) ajratish —
+  // ular ham iOS'da ishlaydi, lekin "Bosh ekranga qo'shish" faqat Safari'da bor
+  function isIOSSafari() {
+    var ua = window.navigator.userAgent;
+    return /safari/i.test(ua) && !/crios|fxios|opios|edgios|instagram|telegram|fban|fbav|gsa\//i.test(ua);
   }
 
   function showInstallBlock() {
@@ -208,11 +246,22 @@
     showInstallBlock();
   });
 
-  // iOS Safari beforeinstallprompt'ni qo'llamaydi — qo'lda ko'rsatma beramiz
+  // iOS: beforeinstallprompt yo'q — grafikli 3 qadamli ko'rsatmani doim ko'rsatamiz
   if (isIOS() && !isStandalone()) {
     showInstallBlock();
-    installHint.style.display = 'block';
-    installHint.textContent = "iPhone/iPad'da: pastdagi \"Ulashish\" tugmasini bosing, so'ng \"Bosh ekranga qo'shish\"ni tanlang.";
+    installBtn.style.display = 'none';
+    iosSteps.style.display = 'block';
+
+    if (isIOSSafari()) {
+      // Allaqachon Safari'da — 1-qadamni bajarilgan deb belgilaymiz
+      iosStep1.style.background = 'rgba(255,255,255,0.16)';
+      iosStep1Icon.innerHTML = '<path d="M5 12.5l4 4 10-10"/>';
+      iosStep1Text.innerHTML = '✅ Siz hozir <b>Safari</b>\'dasiz';
+    } else {
+      // Boshqa brauzer/in-app oynada — Safari'da ochishni so'raymiz
+      installHint.style.display = 'block';
+      installHint.textContent = "Diqqat: hozir Safari emas. \"Bosh ekranga qo'shish\" faqat Safari'da ishlaydi — havolani nusxalab, Safari'da oching.";
+    }
   }
 
   installBtn.addEventListener('click', function () {
@@ -222,9 +271,6 @@
         deferredPrompt = null;
         installBlock.style.display = 'none';
       });
-    } else if (isIOS()) {
-      installHint.style.display = 'block';
-      installHint.textContent = "iPhone/iPad'da: pastdagi \"Ulashish\" tugmasini bosing, so'ng \"Bosh ekranga qo'shish\"ni tanlang.";
     } else {
       installHint.style.display = 'block';
       installHint.textContent = "Brauzeringiz avtomatik o'rnatishni qo'llamaydi. Brauzer menyusidan \"Bosh ekranga qo'shish\" / \"Ilova sifatida o'rnatish\"ni qidiring.";
